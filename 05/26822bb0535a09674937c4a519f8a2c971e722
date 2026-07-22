@@ -1,0 +1,27 @@
+Sources/PulseVPNMenuHelper/TimestampingLogWriter.swift
+  s_59471edef67d16::t_1e18244558f16a 53
+  s_59471edef67d16::t_d26b53068d62c8 12-16,19,28-29
+Sources/PulseVPNMenuHelper/HelperService.swift
+  s_59471edef67d16::t_b46531834a2180 33,43-45,52-53
+  s_59471edef67d16::t_3a7488b737d173 78
+Sources/PulseVPNMenuHelper/CappedLogFile.swift
+  s_59471edef67d16::t_666e660f0cbca1 1-59
+Sources/PulseVPNMenu/Persistence/LogStore.swift
+  s_59471edef67d16::t_95def9e35940a5 120-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0526822bb0535a09674937c4a519f8a2c971e722",
+  "prompts": {},
+  "sessions": {
+    "s_59471edef67d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f00835b2-4a3e-4b00-a541-1cd0ae7ec559",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
