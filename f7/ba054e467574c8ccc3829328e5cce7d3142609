@@ -1,0 +1,42 @@
+Sources/PulseVPNMenu/VPN/StatsParser.swift
+  s_59471edef67d16::t_a8b663d117d5ad 31-33,38,51,57,62
+Sources/PulseVPNMenu/Privileged/PrivilegedHelperClient.swift
+  s_59471edef67d16::t_0a9325a1d55255 96
+Sources/PulseVPNMenu/UI/SettingsView.swift
+  s_59471edef67d16::t_3741644488f8c0 89-96
+Sources/PulseVPNMenu/VPN/StatsLineClassifier.swift
+  s_59471edef67d16::t_52353514a162da 1-39
+Sources/PulseVPNMenu/Persistence/AppSettings.swift
+  s_59471edef67d16::t_e80c3c68c47f80 24-37,41,49,53,58-62
+Sources/PulseVPNMenu/Networking/DSIDAuthenticator.swift
+  s_59471edef67d16::t_ec2bef75d2d404 58
+Sources/PulseVPNMenu/App/AppState.swift
+  s_59471edef67d16::t_b2b0ba20893ce9 30
+Sources/PulseVPNMenu/Networking/ChromeProcessLauncher.swift
+  s_59471edef67d16::t_abe9c5db6caa20 78
+  s_59471edef67d16::t_824dd43d365719 97
+Sources/PulseVPNMenu/Persistence/LogStore.swift
+  s_59471edef67d16::t_7474a948009e28 11,17-24,30-31,46
+  s_59471edef67d16::t_869f72929dffe2 130-140,144-154,156
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_59471edef67d16::t_5cca1ae385f118 362
+  s_59471edef67d16::t_2c298e8061d062 403
+  s_59471edef67d16::t_eaa651ff4fc117 337
+  s_59471edef67d16::t_aacc642bb2e589 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "f7ba054e467574c8ccc3829328e5cce7d3142609",
+  "prompts": {},
+  "sessions": {
+    "s_59471edef67d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f00835b2-4a3e-4b00-a541-1cd0ae7ec559",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
