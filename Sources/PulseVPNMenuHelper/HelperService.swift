@@ -30,7 +30,7 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
             "PATH": "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin",
         ]
 
-        guard let logHandle = FileHandle(forWritingAtPath: logPath) else {
+        guard let logFile = CappedLogFile(path: logPath) else {
             reply(0, Self.error("Could not open \(logPath) for writing"))
             return
         }
@@ -40,15 +40,17 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
         // file) and prefixed with a human-readable timestamp per line,
         // matching the app's own log (LogStore.append -> app.log). Both
         // streams' writes are serialized onto one queue since they share a
-        // single destination FileHandle.
+        // single destination `CappedLogFile`, which also keeps the file
+        // from growing unbounded on a long-lived, idle-but-still-polled
+        // connection.
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
         let logQueue = DispatchQueue(label: "com.claudiosv.pulse-vpn-menu.helper.logwriter")
-        let stdoutWriter = TimestampingLogWriter(logHandle: logHandle)
-        let stderrWriter = TimestampingLogWriter(logHandle: logHandle)
+        let stdoutWriter = TimestampingLogWriter(logFile: logFile)
+        let stderrWriter = TimestampingLogWriter(logFile: logFile)
 
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -73,7 +75,7 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
             logQueue.async {
                 stdoutWriter.flush()
                 stderrWriter.flush()
-                try? logHandle.close()
+                logFile.close()
             }
         }
 

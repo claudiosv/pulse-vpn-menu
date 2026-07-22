@@ -9,14 +9,14 @@ import Foundation
 ///
 /// Not thread-safe on its own: callers must serialize every `consume(_:)`/
 /// `flush()` call for a given destination file onto one queue (a stdout
-/// instance and a stderr instance sharing the same `FileHandle` still need
-/// their writes serialized against each other, even though each keeps its
-/// own line buffer). `@unchecked Sendable` because that serialization is
-/// enforced externally (both `HelperService` call sites only ever touch an
-/// instance via the same dedicated `DispatchQueue`), not by this type
+/// instance and a stderr instance sharing the same `CappedLogFile` still
+/// need their writes serialized against each other, even though each keeps
+/// its own line buffer). `@unchecked Sendable` because that serialization
+/// is enforced externally (both `HelperService` call sites only ever touch
+/// an instance via the same dedicated `DispatchQueue`), not by this type
 /// itself.
 final class TimestampingLogWriter: @unchecked Sendable {
-    private let logHandle: FileHandle
+    private let logFile: CappedLogFile
     private var buffer = Data()
 
     private static let timestampFormatter: DateFormatter = {
@@ -25,8 +25,8 @@ final class TimestampingLogWriter: @unchecked Sendable {
         return formatter
     }()
 
-    init(logHandle: FileHandle) {
-        self.logHandle = logHandle
+    init(logFile: CappedLogFile) {
+        self.logFile = logFile
     }
 
     /// Pass `Data()` (or call `flush()` directly) once the source stream
@@ -50,6 +50,6 @@ final class TimestampingLogWriter: @unchecked Sendable {
         let line = String(decoding: lineData, as: UTF8.self)
         let timestamp = Self.timestampFormatter.string(from: Date())
         guard let data = "[\(timestamp)] \(line)\n".data(using: .utf8) else { return }
-        logHandle.write(data)
+        logFile.write(data)
     }
 }

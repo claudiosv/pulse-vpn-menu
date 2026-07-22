@@ -117,6 +117,16 @@ final class LogStore: ObservableObject {
 
     private func readNewData() {
         guard let data = try? Data(contentsOf: AppPaths.currentLogFile) else { return }
+        if UInt64(data.count) < readOffset {
+            // The file shrank — the helper caps current.log's size and
+            // trims older content once it grows past the limit. Everything
+            // now in the file is a suffix of what's already been tailed
+            // and displayed, so just resync the offset rather than
+            // re-displaying duplicate lines or stalling forever waiting
+            // for the file to regrow past the old offset.
+            readOffset = UInt64(data.count)
+            return
+        }
         guard UInt64(data.count) > readOffset else { return }
         let newData = data.suffix(from: Int(readOffset))
         readOffset = UInt64(data.count)
