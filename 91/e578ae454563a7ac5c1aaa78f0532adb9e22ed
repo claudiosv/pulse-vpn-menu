@@ -1,0 +1,143 @@
+Sources/PulseVPNMenu/Privileged/ShellQuoting.swift
+  s_59471edef67d16::t_e034b39bb7cd8a 1-33
+Sources/PulseVPNMenu/VPN/StatsParser.swift
+  s_59471edef67d16::t_eaa71605d5d3a0 1-93,127
+  s_59471edef67d16::t_2a9cc3ce492589 94-126
+Sources/PulseVPNMenu/Persistence/ConnectionStore.swift
+  s_59471edef67d16::t_6759ef24678bff 1-85
+build.sh
+  s_59471edef67d16::t_151fd6252252b7 1-90
+Sources/PulseVPNMenu/Networking/DSIDAuthenticator.swift
+  s_59471edef67d16::t_977d311a7edd01 1-34,36-42,44-53,55-61
+  s_59471edef67d16::t_143cfeb588cd0a 35,43,54
+Sources/PulseVPNMenu/VPN/NetworkInterfaces.swift
+  s_59471edef67d16::t_be8dc1fea2053c 30-33
+  s_59471edef67d16::t_6b4ce65b1cb37c 1-29,34-51
+Sources/PulseVPNMenu/UI/LogsView.swift
+  s_59471edef67d16::t_2876c3b1bca502 1-35
+Sources/PulseVPNMenu/Networking/CDPModels.swift
+  s_59471edef67d16::t_050f2acff995d5 1-32
+Sources/PulseVPNMenu/Networking/ChromeLocator.swift
+  s_59471edef67d16::t_003f6730e456b7 1-36
+README.md
+  s_59471edef67d16::t_0a817d2ab76333 1-61
+Sources/PulseVPNMenu/Persistence/AppPaths.swift
+  s_59471edef67d16::t_128bbe56c0214f 1-22,32,44,48-49,51-54
+  s_59471edef67d16::t_7b358599c36d12 23-31,33-43,45-47,50
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_59471edef67d16::t_6769a46abe540a 378
+  s_59471edef67d16::t_97e0ac717afa19 138-149
+  s_59471edef67d16::t_31ef86af5838cf 54-58
+  s_59471edef67d16::t_c940749cc979d3 77-87,91-113
+  s_59471edef67d16::t_43e140f80e0354 213-218,250-266,268-275
+  s_59471edef67d16::t_5048256437da30 230-247
+  s_59471edef67d16::t_b64c2a1de93c65 310
+  s_59471edef67d16::t_63902cca0e862d 363
+  s_59471edef67d16::t_d6a399e73d8efe 480
+  s_59471edef67d16::t_aa7da22bfd2961 415-416
+  s_59471edef67d16::t_b734daea0eaad3 72-76
+  s_59471edef67d16::t_cb00ca9965d21b 464
+  s_59471edef67d16::t_a1298c4a18e350 1-46,52-53,59-71,88-90,114-137,150-204,206-212,267,276-290,297-309,311-333,335-346,348-359,361-362,364,366-377,379-389,391-414,417-423,465-479,481-517
+  s_59471edef67d16::t_8ca0922643e0fa 219-229,248-249
+  s_59471edef67d16::t_07b1e61150e248 291-296
+  s_59471edef67d16::t_bd5e3bbfb26720 347
+  h_aceaeb4e74d6dc 205
+  s_59471edef67d16::t_50c9676b77950c 424-463
+  s_59471edef67d16::t_909d6710b7ba2a 47-51
+  s_59471edef67d16::t_8341569896569e 360
+  s_59471edef67d16::t_9393efb6a59fb2 334
+  s_59471edef67d16::t_6f33cf764afc15 365
+  s_59471edef67d16::t_7ead53503d1da8 390
+Sources/PulseVPNMenu/UI/SettingsView.swift
+  s_59471edef67d16::t_821514b64443e0 1-7,12-35,37-44,47-89
+  s_59471edef67d16::t_a798869d453063 8-11
+  s_59471edef67d16::t_b05634661b37d8 36,45-46
+Package.swift
+  s_59471edef67d16::t_2d9f5e66d177e9 1-18
+Sources/PulseVPNMenu/Networking/ChromeProcessLauncher.swift
+  s_59471edef67d16::t_e4b9d95555381e 1-95
+Sources/PulseVPNMenu/UI/ConnectionEditView.swift
+  s_59471edef67d16::t_76bce77b8b4e25 18-32
+  s_59471edef67d16::t_2d4922b9eea93e 1-17,33-77
+Sources/PulseVPNMenu/UI/StatsGraphView.swift
+  s_59471edef67d16::t_739f57345fcd7b 4-7,10-23,26,35,37,39,46-55,57,59-99,103-111,118,121,123
+  s_59471edef67d16::t_fc9748c72bea52 1-3,8,24-25,27-34,112-116,119-120,122,124-126
+  s_59471edef67d16::t_78436a50510906 36,45,56,58,101-102
+  s_59471edef67d16::t_8bc6c355eb9ae2 38,40-43,100
+  s_59471edef67d16::t_e1321a41d8e8f7 9,44,117
+Sources/PulseVPNMenu/Privileged/PrivilegedRunner.swift
+  s_59471edef67d16::t_bedf52083ab15a 62-63,72,119,132-139,171,180-207
+  s_59471edef67d16::t_3d5e2bb694300a 1-4,6-11,14-19,61,64-65,71,80,110-111,120-131,174-175,177-179,208-209
+  s_59471edef67d16::t_927fc253fcc9d8 40-43
+  s_59471edef67d16::t_3cec4ea87ec803 44-52
+  s_59471edef67d16::t_264d345032bcc9 5,12-13,20-39,53-60,66-70,73-79,81-109,112-118,140-170,172-173,176
+Sources/PulseVPNMenu/VPN/RouteManager.swift
+  s_59471edef67d16::t_76f892f652cbca 49,66
+  s_59471edef67d16::t_fa20cb8b96ef4e 53,57,62
+  s_59471edef67d16::t_dee58b1b852405 1-7,13,16-48,50-52,54-56,58-61,63-65,67-68
+  s_59471edef67d16::t_7ceb36f3e0b844 8-12,15
+  s_59471edef67d16::t_66919f2f7836e2 14
+.gitignore
+  s_59471edef67d16::t_5dcf4fb24660a5 1-5
+Sources/PulseVPNMenu/Persistence/LogStore.swift
+  s_59471edef67d16::t_388a5ac79641f9 93-95
+  s_59471edef67d16::t_4319df29a5c292 1-15,21-92,96-97
+  s_59471edef67d16::t_faffbe5e848acf 16-20
+Sources/PulseVPNMenu/Privileged/SudoersInstaller.swift
+  s_59471edef67d16::t_ad236c023424cf 1-21,34-81,85-94,108-145
+  s_59471edef67d16::t_fa7238f96103d2 99-107
+  s_59471edef67d16::t_73adbf42dc242a 82-84,95-98
+  s_59471edef67d16::t_b54920725e4469 22-33
+Sources/PulseVPNMenu/Networking/CDPClient.swift
+  s_59471edef67d16::t_7f62790ac6143a 1-11,22-40,42-61,63-132,134-135
+  s_59471edef67d16::t_e409d73171c15f 62
+  s_59471edef67d16::t_8de901659cac3b 41
+  s_59471edef67d16::t_b2ece3db90f90e 12-21
+  s_59471edef67d16::t_2ec3bea0e58097 133
+Sources/PulseVPNMenu/Persistence/ConnectionProfile.swift
+  s_59471edef67d16::t_9e91246ceb2382 1-38
+Sources/PulseVPNMenu/App/AppState.swift
+  s_59471edef67d16::t_a5ed82bb9ac050 48-53,58,62
+  s_59471edef67d16::t_57060ac9f7d9c8 1-47,54-57,59-61,63-79,86-88
+  s_59471edef67d16::t_c64544b54f13b1 80-85
+Sources/PulseVPNMenu/App/MenuBarContentView.swift
+  s_59471edef67d16::t_8704c62990b8a9 1
+  s_59471edef67d16::t_8175b3ca10190b 2-3,13-19,26,30,32,35,40,47,49,64,71,74-79,82-83,85-88,90-94,97,100-106,167
+  s_59471edef67d16::t_9d6ff6c0424ff2 4-12,20-25,27-29,31,33-34,36-39,41-46,48,50-61,63,65-70,72-73,80,84,89,95-96,98-99,119-164
+  s_59471edef67d16::t_d52c9bb361c696 62
+  s_59471edef67d16::t_436e84bfe4b2a6 81
+  s_59471edef67d16::t_4eb586cd6437f6 107-118,165-166
+Sources/PulseVPNMenu/App/PulseVPNMenuApp.swift
+  s_59471edef67d16::t_fed5c6148b8f12 1-15,26-35,43-44
+  s_59471edef67d16::t_eabde80085147b 38-42
+  s_59471edef67d16::t_4ab0141d897c9e 16-25
+  s_59471edef67d16::t_ab9dd57c0e9b3e 36-37
+Sources/PulseVPNMenu/Networking/FreePort.swift
+  s_59471edef67d16::t_480a9108fd1ec6 1-42
+Sources/PulseVPNMenu/Persistence/RuntimeState.swift
+  s_59471edef67d16::t_e64d51b84ad942 8-11
+  s_59471edef67d16::t_a443124bc8941c 1-7,12-31
+.vscode/launch.json
+  s_59471edef67d16::t_b99013aa06658a 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "91e578ae454563a7ac5c1aaa78f0532adb9e22ed",
+  "prompts": {},
+  "humans": {
+    "h_aceaeb4e74d6dc": {
+      "author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_59471edef67d16": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f00835b2-4a3e-4b00-a541-1cd0ae7ec559",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
