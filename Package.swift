@@ -7,12 +7,22 @@ let package = Package(
         .macOS(.v14)
     ],
     targets: [
+        .target(
+            name: "PulseVPNHelperProtocol",
+            path: "Sources/PulseVPNHelperProtocol"
+        ),
         .executableTarget(
             name: "PulseVPNMenu",
+            dependencies: ["PulseVPNHelperProtocol"],
             path: "Sources/PulseVPNMenu",
             linkerSettings: [
                 .linkedFramework("SystemConfiguration")
             ]
+        ),
+        .executableTarget(
+            name: "PulseVPNMenuHelper",
+            dependencies: ["PulseVPNHelperProtocol"],
+            path: "Sources/PulseVPNMenuHelper"
         )
     ]
 )

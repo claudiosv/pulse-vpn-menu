@@ -59,7 +59,7 @@ enum ChromeProcessLauncher {
         try process.run()
 
         do {
-            let wsURL = try await pollForWebSocketURL(port: port)
+            let wsURL = try await pollForWebSocketURL(process: process, port: port)
             return LaunchResult(process: process, webSocketDebuggerURL: wsURL)
         } catch {
             process.terminate()
@@ -67,15 +67,23 @@ enum ChromeProcessLauncher {
         }
     }
 
-    /// Initial 0.25s delay, then up to 5 tries with 0.5s between — matches
-    /// `Browser.start()`'s polling loop exactly.
-    private static func pollForWebSocketURL(port: UInt16) async throws -> URL {
+    /// Initial 0.25s delay, then polls every 0.5s for up to ~20s total.
+    /// Measured Chrome cold-starting its DevTools port on this machine at
+    /// ~4s — the original 5-try/~2.5s budget (matching nodriver's
+    /// `Browser.start()` exactly) was too tight and caused spurious
+    /// "Could not connect to the server" failures. Bails out early if
+    /// Chrome's own process has already exited rather than waiting out the
+    /// full budget on a browser that's never coming up.
+    private static func pollForWebSocketURL(process: Process, port: UInt16) async throws -> URL {
         try await Task.sleep(nanoseconds: 250_000_000)
 
         let versionURL = URL(string: "http://127.0.0.1:\(port)/json/version")!
         var lastError: Error?
 
-        for attempt in 0..<5 {
+        for attempt in 0..<40 {
+            if !process.isRunning {
+                throw LaunchError.devToolsNotResponding
+            }
             do {
                 let (data, _) = try await URLSession.shared.data(from: versionURL)
                 let response = try JSONDecoder().decode(VersionResponse.self, from: data)
@@ -85,7 +93,7 @@ enum ChromeProcessLauncher {
                 return wsURL
             } catch {
                 lastError = error
-                if attempt < 4 {
+                if attempt < 39 {
                     try await Task.sleep(nanoseconds: 500_000_000)
                 }
             }

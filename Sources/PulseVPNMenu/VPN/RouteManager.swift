@@ -1,18 +1,13 @@
 import Foundation
 
 /// Route table manipulation, mirroring `launcher.py`'s route handling in
-/// `connect_once()`/`disconnect()` for macOS's BSD `route(8)` syntax.
+/// `connect_once()`/`disconnect()` for macOS's BSD `route(8)` syntax. Talks
+/// to the privileged helper daemon (`PrivilegedHelperClient`) — no shared
+/// instance to construct/hold since it's a singleton.
 struct RouteManager {
-    let privileged: PrivilegedRunner
-
-    /// Absolute path — required (not just cleaner) so the sudo-mode NOPASSWD
-    /// sudoers rule, which matches an exact resolved path, matches
-    /// unambiguously regardless of `sudo`'s own PATH resolution.
-    private let routePath = "/sbin/route"
-
     /// `route change default <gatewayIP>` — macOS BSD syntax omits "gw".
     func setDefaultRoute(gatewayIP: String) async throws {
-        try await privileged.run([routePath, "change", "default", gatewayIP])
+        try await PrivilegedHelperClient.shared.setDefaultRoute(gatewayIP: gatewayIP)
     }
 
     /// Looks up any IPv4 address(es) currently cached for `hostname` via the
@@ -39,30 +34,30 @@ struct RouteManager {
 
     /// Full disconnect cleanup: delete the VPN default route (unless
     /// `noDefaultRoute`), delete any stale hostname route, and restore the
-    /// original default gateway if it changed. One privileged batch call
-    /// (one password dialog), mirroring `launcher.py:387-453`.
+    /// original default gateway if it changed. Mirrors
+    /// `launcher.py:387-453`. Three independent XPC calls rather than one
+    /// batched privileged command: today's batching existed purely to
+    /// minimize *password dialogs* (one osascript prompt for the whole
+    /// batch) — under XPC there's no per-call user-facing prompt at all
+    /// (registration/approval is one one-time event, not per-call), so that
+    /// motivation disappears entirely.
     func cleanupAfterDisconnect(
         vpnGatewayIP: String?,
         hostname: String?,
         noDefaultRoute: Bool,
         originalGatewayIP: String?
     ) async throws {
-        var commands: [[String]] = []
-
         if let vpnGatewayIP, !noDefaultRoute {
-            commands.append([routePath, "delete", "default", vpnGatewayIP])
+            try await PrivilegedHelperClient.shared.deleteDefaultRoute(gatewayIP: vpnGatewayIP)
         }
 
         if let hostname, let staleIP = resolveViaDSCacheUtil(hostname: hostname), !staleIP.isEmpty {
-            commands.append([routePath, "-n", "delete", staleIP])
+            try await PrivilegedHelperClient.shared.deleteHostRoute(ip: staleIP)
         }
 
         let currentGateway = NetworkInterfaces.defaultGatewayIP()
         if let originalGatewayIP, currentGateway != originalGatewayIP {
-            commands.append([routePath, "add", "default", originalGatewayIP])
+            try await PrivilegedHelperClient.shared.addDefaultRoute(gatewayIP: originalGatewayIP)
         }
-
-        guard !commands.isEmpty else { return }
-        try await privileged.runBatch(commands)
     }
 }

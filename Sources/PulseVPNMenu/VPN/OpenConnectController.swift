@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import ServiceManagement
 
 enum ConnectExitOutcome {
     case up
@@ -29,9 +30,10 @@ enum ConnectError: Error, CustomStringConvertible {
 }
 
 /// Mirrors `launcher.py`'s `OpenconnectPulseLauncher`: authenticates (via
-/// `DSIDAuthenticator`), launches openconnect as root (via
-/// `PrivilegedRunner`), waits for the tunnel interface to come up, manages
-/// routes (`RouteManager`), and delivers signals for stop/reconnect/stats.
+/// `DSIDAuthenticator`), launches openconnect as root (via the privileged
+/// helper daemon, `PrivilegedHelperClient`), waits for the tunnel interface
+/// to come up, manages routes (`RouteManager`), and delivers signals for
+/// stop/reconnect/stats.
 @MainActor
 final class OpenConnectController: ObservableObject {
     @Published private(set) var isBusy = false
@@ -40,22 +42,20 @@ final class OpenConnectController: ObservableObject {
     let stats = StatsHistory()
     let logStore: LogStore
 
-    private let privileged = PrivilegedRunner()
-    private lazy var routeManager = RouteManager(privileged: privileged)
+    private let routeManager = RouteManager()
     private let authenticator = DSIDAuthenticator()
-
-    /// Absolute path — required (not just cleaner) so the sudo-mode
-    /// NOPASSWD sudoers rule, which matches an exact resolved path,
-    /// matches unambiguously regardless of `sudo`'s own PATH resolution.
-    private static let killPath = "/bin/kill"
 
     private var statsTimerTask: Task<Void, Never>?
     private var runtimeState: RuntimeState?
-    /// Held only when launched via the sudo path (see `PrivilegedRunner`):
-    /// a live handle whose `isRunning`/`terminationStatus` track the real
-    /// openconnect process directly, no pidfile/exitfile polling needed.
-    private var managedProcess: Process?
-    private var hasAttemptedSudoersSetup = false
+
+    /// Set once openconnect's own "ESP session established with server" line
+    /// appears in the log for the current connection attempt. The interface
+    /// coming up (`Configured as <ip>, with SSL connected and ESP in
+    /// progress`) happens first and is not sufficient on its own — the ESP
+    /// negotiation can still fail or hang after that point — so
+    /// `connectOnce` gates declaring `.up` on this flag as well, not just on
+    /// the interface existing.
+    private var espEstablished = false
 
     static let tunnelTimeout: TimeInterval = 30
     static let statsInterval: TimeInterval = 5
@@ -64,6 +64,9 @@ final class OpenConnectController: ObservableObject {
         self.logStore = logStore
         logStore.onLine = { [weak self] line in
             self?.stats.ingest(line)
+            if line.contains("ESP session established with server") {
+                self?.espEstablished = true
+            }
         }
 
         if let state = RuntimeState.load(), Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") {
@@ -71,15 +74,17 @@ final class OpenConnectController: ObservableObject {
             self.connectedProfileID = state.profileID
             // Every relaunch while already connected — not just the
             // crash/pid-file-recovery case below — needs this too, or the
-            // stats timer (and thus `kill -USR1`) never resumes and no
-            // more RX/TX stats ever show up in the log.
+            // stats timer (and thus the periodic stats-request) never
+            // resumes and no more RX/TX stats ever show up in the log.
             startStatsTimer(pid: state.pid)
         } else if let recovered = Self.recoverStateFromPidFile() {
             // The app was killed/crashed/relaunched without a clean
             // disconnect, but openconnect itself is still running (it's a
             // detached, privileged process independent of our own
             // lifetime) — reattach instead of showing "disconnected" while
-            // a real tunnel is up underneath us.
+            // a real tunnel is up underneath us. This reattachment is
+            // entirely unprivileged (kill(pid,0) + ps name check) and
+            // doesn't depend on the helper at all.
             recovered.save()
             self.runtimeState = recovered
             self.connectedProfileID = recovered.profileID
@@ -125,6 +130,8 @@ final class OpenConnectController: ObservableObject {
         return "\(name), \(ip)"
     }
 
+    var helperStatus: SMAppService.Status { PrivilegedHelperClient.shared.status }
+
     // MARK: - Connect
 
     /// Authenticate-then-launch-then-retry loop, mirroring `connect()` in
@@ -135,16 +142,35 @@ final class OpenConnectController: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
-        if !hasAttemptedSudoersSetup {
-            hasAttemptedSudoersSetup = true
-            if !SudoersInstaller.isInstalled() {
-                do {
-                    try await SudoersInstaller.install()
-                    logStore.append("Installed a passwordless-sudo rule for VPN commands (openconnect, route, kill) — you won't be prompted for a password on every action anymore.\n")
-                } catch {
-                    logStore.append("Could not set up passwordless sudo (\(error)); will keep prompting for a password per action.\n")
-                }
+        // Deliberately re-checked on every connect attempt rather than
+        // gated behind a one-shot flag: `ensureRegistered()` is cheap when
+        // the helper is already `.enabled` (just a hash compare), and this
+        // makes registration self-healing if a previous attempt failed
+        // (e.g. the register()-right-after-unregister() race) instead of
+        // silently never retrying for the rest of the app's lifetime.
+        do {
+            let status = try await PrivilegedHelperClient.shared.ensureRegistered()
+            switch status {
+            case .enabled:
+                logStore.append("Privileged helper ready.\n")
+            case .requiresApproval:
+                logStore.append("The VPN helper needs approval in System Settings > General > Login Items & Extensions before connecting will work. Opening System Settings…\n")
+                SMAppService.openSystemSettingsLoginItems()
+                return
+            case .notFound, .notRegistered:
+                logStore.append("Could not register the privileged helper.\n")
+                return
+            @unknown default:
+                break
             }
+        } catch {
+            // Bail out here rather than falling through to the
+            // browser-login flow below — without a working helper,
+            // openconnect can never actually be launched, so there's no
+            // point making the user authenticate first only to fail at the
+            // very last step.
+            logStore.append("Failed to register privileged helper: \(error)\n")
+            return
         }
 
         var workingProfile = profile
@@ -196,13 +222,13 @@ final class OpenConnectController: ObservableObject {
         try AppPaths.prepareForNewConnection()
         logStore.resetForNewConnection()
         stats.clear()
+        espEstablished = false
 
         var argv = [openconnectPath]
         if let script = profile.script, !script.isEmpty {
             argv.append(contentsOf: ["-s", script])
         }
         argv.append(contentsOf: [
-            // "-vvvv",
             "--reconnect-timeout", "30",
             "--force-dpd", "5",
             "-C", dsidValue,
@@ -210,68 +236,16 @@ final class OpenConnectController: ObservableObject {
             profile.vpnURL,
         ])
 
-        let pid: Int32
-        var exitFile: URL?
+        // The helper spawns openconnect itself and hands back its real PID
+        // synchronously — no more sudo-forking workaround, no pidfile
+        // polling.
+        let pid = try await PrivilegedHelperClient.shared.launchOpenConnect(
+            argv: argv,
+            logFile: AppPaths.currentLogFile
+        )
 
-        if privileged.sudoAvailable {
-            let process = try privileged.launchOpenConnectViaSudo(argv: argv, logFile: AppPaths.currentLogFile)
-            managedProcess = process
-            // `sudo`'s own PID is NOT openconnect's PID: this build of sudo
-            // forks a child and waits for it rather than exec'ing in place
-            // (confirmed empirically — `ps -o pid,ppid,comm` showed
-            // sudo and openconnect as distinct processes with a real
-            // parent/child relationship). Using sudo's PID for
-            // RuntimeState/isConnected/signal-delivery would check or
-            // signal the wrong process entirely (the name check against
-            // "openconnect" would simply fail forever). `process.isRunning`
-            // /`terminationStatus` still correctly track the connection's
-            // lifetime, though — sudo waits for and relays its child's
-            // exit status as its own.
-            if let realPid = try await Self.waitForChildPid(ofParent: process.processIdentifier, named: "openconnect") {
-                pid = realPid
-            } else if !process.isRunning {
-                // A rejected cookie fails near-instantly (no real network
-                // round trip needed) — openconnect can exit before a single
-                // `ps` poll ever observes it alive, so its child PID is
-                // never found. Nothing to track anymore in that case; use
-                // sudo's relayed exit status directly instead of treating
-                // an already-finished attempt as a hard failure (which
-                // would skip the rejected-cookie retry entirely).
-                let exitCode = process.terminationStatus
-                runtimeState = nil
-                RuntimeState.clear()
-                if exitCode == 2 {
-                    return ConnectAttemptResult(outcome: .rejectedCookie, dsidUsed: dsidValue)
-                }
-                return ConnectAttemptResult(outcome: .failed(exitCode), dsidUsed: dsidValue)
-            } else {
-                throw ConnectError.pidNotResolved
-            }
-        } else {
-            managedProcess = nil
-            let newExitFile = AppPaths.newExitFile()
-            FileManager.default.createFile(atPath: newExitFile.path, contents: nil, attributes: [.posixPermissions: 0o666])
-            exitFile = newExitFile
-
-            try await privileged.runOpenConnectBackground(
-                argv: argv,
-                logFile: AppPaths.currentLogFile,
-                pidFile: AppPaths.openconnectPidFile,
-                exitFile: newExitFile
-            )
-
-            guard let resolvedPid = try await waitForPID() else {
-                throw ConnectError.pidNotResolved
-            }
-            pid = resolvedPid
-        }
-        defer {
-            if let exitFile { try? FileManager.default.removeItem(at: exitFile) }
-        }
-
-        // Keep the PID file current regardless of which launch mechanism
-        // was used, so crash-recovery (`recoverStateFromPidFile`) works
-        // uniformly whether this connection was sudo- or osascript-managed.
+        // Keep the PID file current so crash-recovery
+        // (`recoverStateFromPidFile`) keeps working exactly as before.
         try? String(pid).write(to: AppPaths.openconnectPidFile, atomically: true, encoding: .utf8)
 
         var state = RuntimeState(
@@ -288,20 +262,25 @@ final class OpenConnectController: ObservableObject {
 
         let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
         while Date() < deadline {
-            let exitCode: Int32? = if let process = managedProcess {
-                process.isRunning ? nil : process.terminationStatus
-            } else {
-                exitFile.flatMap { readExitCodeIfPresent(at: $0) }
-            }
-            if let exitCode {
+            let (known, running, exitCode) = try await PrivilegedHelperClient.shared.processStatus(pid: pid)
+            if known, !running {
                 runtimeState = nil
                 RuntimeState.clear()
                 if exitCode == 2 {
                     return ConnectAttemptResult(outcome: .rejectedCookie, dsidUsed: dsidValue)
                 }
                 return ConnectAttemptResult(outcome: .failed(exitCode), dsidUsed: dsidValue)
+            } else if !known, !Self.isProcessAlive(pid: pid, expectedName: "openconnect") {
+                // The helper lost track of this pid (e.g. it was restarted
+                // mid-connection) AND the unprivileged liveness check also
+                // says it's gone — treat as failed rather than guessing at
+                // an exit code we don't have.
+                runtimeState = nil
+                RuntimeState.clear()
+                return ConnectAttemptResult(outcome: .failed(-1), dsidUsed: dsidValue)
             }
-            if let (_, ip) = NetworkInterfaces.findVPNInterface() {
+
+            if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
                 state.vpnGatewayIP = ip
                 state.save()
                 runtimeState = state
@@ -331,7 +310,7 @@ final class OpenConnectController: ObservableObject {
         stopStatsTimer()
 
         do {
-            try await privileged.run([Self.killPath, "-TERM", String(state.pid)])
+            try await PrivilegedHelperClient.shared.terminateOpenConnect(pid: state.pid)
             logStore.append("Sent SIGTERM to openconnect pid: \(state.pid)\n")
         } catch {
             logStore.append("Failed to send SIGTERM: \(error)\n")
@@ -357,12 +336,11 @@ final class OpenConnectController: ObservableObject {
         runtimeState = nil
         RuntimeState.clear()
         connectedProfileID = nil
-        managedProcess = nil
     }
 
     func reconnect() async throws {
         guard let state = runtimeState else { return }
-        try await privileged.run([Self.killPath, "-USR2", String(state.pid)])
+        try await PrivilegedHelperClient.shared.requestReconnect(pid: state.pid)
         logStore.append("Sent SIGUSR2 to openconnect; reconnecting.\n")
     }
 
@@ -376,7 +354,7 @@ final class OpenConnectController: ObservableObject {
                 try? await Task.sleep(nanoseconds: UInt64(Self.statsInterval * 1_000_000_000))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
-                try? await self.sendStatsSignal(pid: pid)
+                try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)
             }
         }
     }
@@ -386,80 +364,13 @@ final class OpenConnectController: ObservableObject {
         statsTimerTask = nil
     }
 
-    private func sendStatsSignal(pid: Int32) async throws {
-        try await privileged.run([Self.killPath, "-USR1", String(pid)])
-    }
-
     private func runPostCommand(_ post: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: post)
         try? process.run()
     }
 
-    // MARK: - PID / exit-code polling
-
-    private func waitForPID() async throws -> Int32? {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if let text = try? String(contentsOf: AppPaths.openconnectPidFile, encoding: .utf8) {
-                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if let pid = Int32(trimmed) {
-                    return pid
-                }
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        return nil
-    }
-
-    private func readExitCodeIfPresent(at exitFile: URL) -> Int32? {
-        guard let text = try? String(contentsOf: exitFile, encoding: .utf8) else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return Int32(trimmed)
-    }
-
     // MARK: - Static helpers
-
-    /// Polls `ps` for a child of `parentPid` named `name` — used to find
-    /// openconnect's real PID underneath the `sudo` process that launched
-    /// it, since sudo forks rather than exec'ing in place on this system.
-    nonisolated private static func waitForChildPid(ofParent parentPid: Int32, named name: String) async throws -> Int32? {
-        let deadline = Date().addingTimeInterval(2)
-        while Date() < deadline {
-            if let child = childPid(ofParent: parentPid, named: name) {
-                return child
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        return nil
-    }
-
-    nonisolated private static func childPid(ofParent parentPid: Int32, named name: String) -> Int32? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-eo", "pid=,ppid=,comm="]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let output = String(decoding: data, as: UTF8.self)
-
-        for line in output.split(separator: "\n") {
-            let fields = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard fields.count >= 3,
-                  let childPid = Int32(fields[0]),
-                  let ppid = Int32(fields[1]),
-                  ppid == parentPid else { continue }
-            let comm = (String(fields[2...].joined(separator: " ")) as NSString).lastPathComponent
-            if comm == name {
-                return childPid
-            }
-        }
-        return nil
-    }
 
     nonisolated static func findOpenConnectPath() -> String {
         if let inPath = findExecutableInPath("openconnect") {
@@ -492,6 +403,7 @@ final class OpenConnectController: ObservableObject {
     /// because it's root-owned) AND its process name matches
     /// `expectedName` (guards against a reused PID after openconnect
     /// exits — mirrors `psutil.pid_exists` + name-check in `launcher.py`).
+    /// Entirely unprivileged — doesn't depend on the helper at all.
     nonisolated static func isProcessAlive(pid: Int32, expectedName: String) -> Bool {
         guard pid > 0 else { return false }
         if kill(pid, 0) != 0 && errno == ESRCH {

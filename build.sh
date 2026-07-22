@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build, bundle, and codesign "Pulse VPN Menu.app".
+# Build, bundle, and codesign "Pulse VPN Menu.app" (including its
+# privileged helper daemon, PulseVPNMenuHelper, registered via SMAppService).
 #
 # Usage: ./build.sh            build -> dist/Pulse VPN Menu.app
 #        ./build.sh --install  also install to /Applications
@@ -9,6 +10,8 @@ cd "$(dirname "$0")"
 APP_NAME="Pulse VPN Menu"
 BUNDLE_ID="com.claudiosv.pulse-vpn-menu"
 EXECUTABLE_NAME="PulseVPNMenu"
+HELPER_EXECUTABLE_NAME="PulseVPNMenuHelper"
+HELPER_BUNDLE_ID="com.claudiosv.pulse-vpn-menu.helper"
 VERSION="0.1.0"
 SIGN_IDENTITY="Developer ID Application: Claudio Spiess (5HN43G3472)"
 
@@ -24,9 +27,15 @@ APP_BUNDLE="dist/${APP_NAME}.app"
 rm -rf dist
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
+mkdir -p "${APP_BUNDLE}/Contents/Library/LaunchDaemons"
 
-echo "==> Copying executable"
+echo "==> Copying executables"
 cp ".build/release/${EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
+cp ".build/release/${HELPER_EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
+
+echo "==> Copying privileged helper launchd plist"
+cp "Resources/PrivilegedHelper/${HELPER_BUNDLE_ID}.plist" \
+    "${APP_BUNDLE}/Contents/Library/LaunchDaemons/${HELPER_BUNDLE_ID}.plist"
 
 echo "==> Writing Info.plist"
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
@@ -71,16 +80,40 @@ echo "==> Copying menu bar status icons"
 cp Assets/menubar-connected.png "${APP_BUNDLE}/Contents/Resources/menubar-connected.png"
 cp Assets/menubar-disconnected.png "${APP_BUNDLE}/Contents/Resources/menubar-disconnected.png"
 
-echo "==> Codesigning with: ${SIGN_IDENTITY}"
-codesign --force --deep --options runtime --timestamp \
+# Sign the helper FIRST, standalone, with an explicit identifier (-i) — a
+# bare Mach-O with no Info.plist of its own has no embedded
+# CFBundleIdentifier for codesign to infer one from, and the identifier
+# must exactly equal ${HELPER_BUNDLE_ID} to match the launchd plist's
+# Label/MachServices key and the `helperRequirement` designated-requirement
+# string baked into the app (PrivilegedHelperConstants).
+echo "==> Codesigning helper: ${HELPER_BUNDLE_ID}"
+codesign --force --options runtime --timestamp \
+    --sign "${SIGN_IDENTITY}" \
+    -i "${HELPER_BUNDLE_ID}" \
+    "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
+
+# Sign the outer app WITHOUT --deep now that the one nested executable is
+# already signed individually — --deep would re-walk and re-sign nested
+# code with the app's own identity/identifier, clobbering the helper's
+# carefully-chosen -i identifier above.
+echo "==> Codesigning app: ${BUNDLE_ID}"
+codesign --force --options runtime --timestamp \
     --sign "${SIGN_IDENTITY}" \
     "${APP_BUNDLE}"
 
-echo "==> Verifying signature"
+echo "==> Verifying signatures"
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+codesign -d -r- "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
 
 echo
 echo "Built: $(pwd)/${APP_BUNDLE}"
+echo
+echo "Note: SMAppService LaunchDaemons require an admin to approve them in"
+echo "System Settings > General > Login Items & Extensions the first time"
+echo "the app registers the helper (first Connect attempt). Apple's docs"
+echo "also state apps containing LaunchDaemons must be notarized; this"
+echo "build is NOT notarized — if daemon registration fails with a"
+echo "signature-shaped error, notarization will need to be set up."
 
 if [[ "${INSTALL}" == "true" ]]; then
     echo "==> Installing to /Applications"

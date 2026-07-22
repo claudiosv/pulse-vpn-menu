@@ -22,29 +22,19 @@ enum AppPaths {
     static let currentLogFile = logsDir.appendingPathComponent("current.log")
 
     /// Fixed, stable path: always holds the most recently launched
-    /// openconnect's real PID, written immediately when it starts. Safe to
-    /// reuse across attempts (unlike the exit file below) because that
-    /// write only ever happens once, right at launch — never lazily at
-    /// process end — so an old attempt can't clobber a newer one's pid.
-    /// This is also what lets a relaunched app reattach to an
+    /// openconnect's real PID. The unprivileged app itself writes this
+    /// immediately after the privileged helper hands back the real PID
+    /// (the helper spawns openconnect directly and reports its PID
+    /// synchronously — no more sudo-forking workaround needed to discover
+    /// it). This is what lets a relaunched app reattach to an
     /// already-running tunnel after a crash (see
-    /// `OpenConnectController.recoverStateFromPidFile`).
+    /// `OpenConnectController.recoverStateFromPidFile`), entirely
+    /// unprivileged.
     static let openconnectPidFile = logsDir.appendingPathComponent("openconnect.pid")
 
-    /// A fresh, uniquely-named exit-code file for one connection attempt.
-    /// Unlike the PID file, this *is* written lazily — only once the
-    /// process eventually terminates — so reusing one fixed path let an
-    /// old, still-pending attempt (e.g. an orphaned openconnect from a
-    /// previous hang) overwrite a brand-new attempt's exit file with stale
-    /// data the moment the old process finally exited, making the app
-    /// think a perfectly healthy new connection had already died.
-    static func newExitFile() -> URL {
-        logsDir.appendingPathComponent("openconnect-\(UUID().uuidString).exit")
-    }
-
-    /// Ensures the log/pid files exist and are world-readable so the
-    /// root-owned openconnect process (writing logFile/pidFile) and this
-    /// unprivileged process can both read/write them without games.
+    /// Ensures the log file exists (world-writable, since the privileged
+    /// helper's `FileHandle(forWritingAtPath:)` requires it to already
+    /// exist) and the pid file exists, before a new connection attempt.
     static func prepareForNewConnection() throws {
         try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
         for file in [currentLogFile, openconnectPidFile] {
