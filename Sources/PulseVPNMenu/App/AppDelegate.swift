@@ -25,7 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var reconnectItem: NSMenuItem!
 
     private lazy var settingsWindow = makeWindow(title: "Settings", minSize: NSSize(width: 480, height: 360)) {
-        SettingsView().environmentObject(self.appState.connectionStore)
+        SettingsView()
+            .environmentObject(self.appState.connectionStore)
+            .environmentObject(self.appState.appSettings)
     }
     private lazy var logsWindow = makeWindow(title: "Logs", minSize: NSSize(width: 640, height: 400)) {
         LogsView().environmentObject(self.appState.logStore)
@@ -86,9 +88,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(actionItem(title: "Stats…") { [weak self] in self?.show(self?.statsWindow) })
 
         menu.addItem(.separator())
-        menu.addItem(actionItem(title: "Quit") { NSApplication.shared.terminate(nil) })
+        menu.addItem(actionItem(title: "Quit") { [weak self] in self?.quit() })
 
         return menu
+    }
+
+    /// Quitting never touched an active tunnel before (see
+    /// `AppSettings.disconnectOnQuit`'s doc comment) — that default is
+    /// preserved here. Only when the user has opted in and a tunnel is
+    /// actually up do we run the same `disconnect()` teardown a manual
+    /// Disconnect click would, and only call `terminate(nil)` once that has
+    /// actually finished (rather than firing it off and quitting
+    /// immediately, which would race the route cleanup).
+    private func quit() {
+        guard appState.appSettings.disconnectOnQuit, appState.isConnected else {
+            NSApplication.shared.terminate(nil)
+            return
+        }
+        Task {
+            appState.logStore.append("Disconnecting before quitting…\n")
+            await appState.controller.disconnect()
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     /// Refreshes everything that can change between menu opens: the

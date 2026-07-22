@@ -41,6 +41,7 @@ final class OpenConnectController: ObservableObject {
 
     let stats = StatsHistory()
     let logStore: LogStore
+    private let appSettings: AppSettings
 
     private let routeManager = RouteManager()
     private let authenticator = DSIDAuthenticator()
@@ -58,10 +59,10 @@ final class OpenConnectController: ObservableObject {
     private var espEstablished = false
 
     static let tunnelTimeout: TimeInterval = 30
-    static let statsInterval: TimeInterval = 5
 
-    init(logStore: LogStore) {
+    init(logStore: LogStore, appSettings: AppSettings) {
         self.logStore = logStore
+        self.appSettings = appSettings
         logStore.onLine = { [weak self] line in
             self?.stats.ingest(line)
             if line.contains("ESP session established with server") {
@@ -70,13 +71,11 @@ final class OpenConnectController: ObservableObject {
         }
 
         if let state = RuntimeState.load(), Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") {
-            self.runtimeState = state
-            self.connectedProfileID = state.profileID
             // Every relaunch while already connected — not just the
-            // crash/pid-file-recovery case below — needs this too, or the
-            // stats timer (and thus the periodic stats-request) never
+            // crash/pid-file-recovery case below — needs to reattach, or
+            // the stats timer (and thus the periodic stats-request) never
             // resumes and no more RX/TX stats ever show up in the log.
-            startStatsTimer(pid: state.pid)
+            verifyAndReattach(state: state)
         } else if let recovered = Self.recoverStateFromPidFile() {
             // The app was killed/crashed/relaunched without a clean
             // disconnect, but openconnect itself is still running (it's a
@@ -86,12 +85,53 @@ final class OpenConnectController: ObservableObject {
             // entirely unprivileged (kill(pid,0) + ps name check) and
             // doesn't depend on the helper at all.
             recovered.save()
-            self.runtimeState = recovered
-            self.connectedProfileID = recovered.profileID
-            logStore.append("Reattached to an already-running openconnect process (pid \(recovered.pid)).\n")
-            startStatsTimer(pid: recovered.pid)
+            verifyAndReattach(state: recovered)
         } else {
             RuntimeState.clear()
+        }
+    }
+
+    /// A pid existing and matching the expected process name isn't proof
+    /// the tunnel is actually up — openconnect can be hung, mid-reconnect,
+    /// or wedged. Rather than flipping straight to "connected" on process
+    /// presence alone, request a stats update and wait for a real sample to
+    /// come back (`StatsHistory` only grows once a genuine SIGUSR1 dump is
+    /// parsed from the log) before setting `runtimeState`, which is what
+    /// `isConnected()` reports on. `isBusy` is held during the check so the
+    /// UI reads "working…" instead of flashing "disconnected".
+    private func verifyAndReattach(state: RuntimeState) {
+        isBusy = true
+        logStore.append("Found an existing openconnect process (pid \(state.pid)); confirming it's responding…\n")
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isBusy = false }
+
+            _ = try? await PrivilegedHelperClient.shared.ensureRegistered()
+
+            let sampleCountBefore = self.stats.samples.count
+            try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: state.pid)
+
+            let deadline = Date().addingTimeInterval(5)
+            while Date() < deadline {
+                if self.stats.samples.count > sampleCountBefore { break }
+                guard Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") else {
+                    self.logStore.append("Process disappeared while confirming; not reattaching.\n")
+                    RuntimeState.clear()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+
+            guard self.stats.samples.count > sampleCountBefore else {
+                self.logStore.append("Could not confirm the existing openconnect process is responding; not reattaching.\n")
+                RuntimeState.clear()
+                return
+            }
+
+            self.runtimeState = state
+            self.connectedProfileID = state.profileID
+            self.logStore.append("Confirmed and reattached to openconnect (pid \(state.pid)).\n")
+            self.startStatsTimer(pid: state.pid)
         }
     }
 
@@ -350,8 +390,17 @@ final class OpenConnectController: ObservableObject {
         stopStatsTimer()
         statsTimerTask = Task { [weak self] in
             guard let self else { return }
+            // Request one immediately rather than waiting out the first
+            // interval — the caller just confirmed (or established) the
+            // tunnel, so there's no reason to sit without stats for up to
+            // a full poll interval before the first sample appears.
+            try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(Self.statsInterval * 1_000_000_000))
+                // Re-read on every iteration (rather than capturing once)
+                // so a change made in Settings while connected takes
+                // effect on the very next tick.
+                let interval = self.appSettings.statsPollInterval
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
                 try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)

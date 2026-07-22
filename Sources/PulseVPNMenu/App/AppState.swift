@@ -10,23 +10,32 @@ import Foundation
 final class AppState: ObservableObject {
     let connectionStore: ConnectionStore
     let logStore: LogStore
+    let appSettings: AppSettings
     let controller: OpenConnectController
 
     @Published private(set) var statusText: String = "VPN: checking…"
     @Published private(set) var isConnected: Bool = false
+
+    /// How often the menu bar / status text refreshes from `controller`'s
+    /// polled state — independent of `AppSettings.statsPollInterval`
+    /// (which governs how often openconnect itself is asked for RX/TX
+    /// stats), even though both happened to share one constant before.
+    private static let statusRefreshInterval: TimeInterval = 5
 
     private var refreshTimer: Timer?
 
     init() {
         let connectionStore = ConnectionStore()
         let logStore = LogStore()
-        let controller = OpenConnectController(logStore: logStore)
+        let appSettings = AppSettings()
+        let controller = OpenConnectController(logStore: logStore, appSettings: appSettings)
         self.connectionStore = connectionStore
         self.logStore = logStore
+        self.appSettings = appSettings
         self.controller = controller
 
         refresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: OpenConnectController.statsInterval, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.statusRefreshInterval, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in self.refresh() }
         }

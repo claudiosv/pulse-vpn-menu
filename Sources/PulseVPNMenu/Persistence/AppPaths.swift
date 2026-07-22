@@ -11,6 +11,7 @@ enum AppPaths {
 
     static let connectionsFile = appSupportDir.appendingPathComponent("connections.json")
     static let runtimeStateFile = appSupportDir.appendingPathComponent("runtime-state.json")
+    static let appSettingsFile = appSupportDir.appendingPathComponent("settings.json")
     static let chromeProfileDir = appSupportDir.appendingPathComponent("chrome-profile", isDirectory: true)
 
     static let logsDir: URL = {
@@ -20,6 +21,15 @@ enum AppPaths {
     }()
 
     static let currentLogFile = logsDir.appendingPathComponent("current.log")
+
+    /// Durable, append-only record of everything the app itself has
+    /// logged (`LogStore.append`) — registration status, connect
+    /// failures, reattach confirmations, route errors, etc. — with a
+    /// timestamp on every line. Unlike `currentLogFile` (openconnect's own
+    /// raw output, truncated at the start of every connection attempt),
+    /// this file is never cleared, so it survives across connections and
+    /// app relaunches as a running diagnostic history.
+    static let appLogFile = logsDir.appendingPathComponent("app.log")
 
     /// Fixed, stable path: always holds the most recently launched
     /// openconnect's real PID. The unprivileged app itself writes this

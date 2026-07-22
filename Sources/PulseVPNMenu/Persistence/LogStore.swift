@@ -37,8 +37,38 @@ final class LogStore: ObservableObject {
         startTailing()
     }
 
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter
+    }()
+
     func append(_ text: String) {
         appendLines(text: text)
+        persistToAppLog(text)
+    }
+
+    /// Timestamps and appends to `AppPaths.appLogFile`, which is never
+    /// truncated (unlike `current.log`) — see that path's doc comment.
+    /// Only messages that go through `append(_:)` (the app's own
+    /// diagnostics) are persisted here, not the tailed openconnect output
+    /// ingested via `readNewData`, which would otherwise turn this into an
+    /// unbounded copy of every RX/TX stats line ever logged.
+    private func persistToAppLog(_ text: String) {
+        let newLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+        guard !newLines.isEmpty else { return }
+        let timestamp = Self.timestampFormatter.string(from: Date())
+        let block = newLines.map { "[\(timestamp)] \($0)\n" }.joined()
+        guard let data = block.data(using: .utf8) else { return }
+
+        let path = AppPaths.appLogFile.path
+        if !FileManager.default.fileExists(atPath: path) {
+            FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o644])
+        }
+        guard let handle = try? FileHandle(forWritingTo: AppPaths.appLogFile) else { return }
+        defer { try? handle.close() }
+        handle.seekToEndOfFile()
+        handle.write(data)
     }
 
     private func seedFromDisk() {
