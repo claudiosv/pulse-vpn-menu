@@ -34,12 +34,54 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
             reply(0, Self.error("Could not open \(logPath) for writing"))
             return
         }
-        process.standardOutput = logHandle
-        process.standardError = logHandle
+
+        // openconnect never timestamps its own output, so stdout/stderr are
+        // piped through here (rather than redirected straight to the log
+        // file) and prefixed with a human-readable timestamp per line,
+        // matching the app's own log (LogStore.append -> app.log). Both
+        // streams' writes are serialized onto one queue since they share a
+        // single destination FileHandle.
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        let logQueue = DispatchQueue(label: "com.claudiosv.pulse-vpn-menu.helper.logwriter")
+        let stdoutWriter = TimestampingLogWriter(logHandle: logHandle)
+        let stderrWriter = TimestampingLogWriter(logHandle: logHandle)
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            logQueue.async { stdoutWriter.consume(data) }
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else {
+                handle.readabilityHandler = nil
+                return
+            }
+            logQueue.async { stderrWriter.consume(data) }
+        }
+
+        process.terminationHandler = { _ in
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            logQueue.async {
+                stdoutWriter.flush()
+                stderrWriter.flush()
+                try? logHandle.close()
+            }
+        }
 
         do {
             try process.run()
         } catch {
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
             reply(0, error as NSError)
             return
         }
