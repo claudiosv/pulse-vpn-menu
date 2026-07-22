@@ -24,28 +24,18 @@ final class StatsHistory: ObservableObject {
 
     private let maxSamples = 4096
 
-    private static let rxTxRegex = try! NSRegularExpression(
-        pattern: #"RX:\s*(\d+) packets? \((\d+) B\);\s*TX:\s*(\d+) packets? \((\d+) B\)"#
-    )
-    private static let configuredRegex = try! NSRegularExpression(
-        pattern: #"Configured as (\S+), with (.+)"#
-    )
-    private static let expiryRegex = try! NSRegularExpression(
-        pattern: #"Session authentication will expire at (.+)"#
-    )
-    private static let ciphersuiteRegex = try! NSRegularExpression(
-        pattern: #"SSL ciphersuite: (.+)"#
-    )
-
     var current: VpnStats? { samples.last }
 
     /// Parses one line of openconnect output. Returns true if it was a
     /// recognized stats/session line (and was recorded), false otherwise.
+    /// Regexes live on `StatsLineClassifier`, shared with `LogStore`'s
+    /// repeated-line filtering, so the two stay in sync on what counts as
+    /// "one of these lines."
     @discardableResult
     func ingest(_ line: String) -> Bool {
         let range = NSRange(line.startIndex..., in: line)
 
-        if let match = Self.rxTxRegex.firstMatch(in: line, range: range),
+        if let match = StatsLineClassifier.rxTxRegex.firstMatch(in: line, range: range),
            let rxPackets = Int(capture(match, 1, in: line) ?? ""),
            let rxBytes = Int(capture(match, 2, in: line) ?? ""),
            let txPackets = Int(capture(match, 3, in: line) ?? ""),
@@ -58,18 +48,18 @@ final class StatsHistory: ObservableObject {
             return true
         }
 
-        if let match = Self.configuredRegex.firstMatch(in: line, range: range) {
+        if let match = StatsLineClassifier.configuredRegex.firstMatch(in: line, range: range) {
             tunnelIP = capture(match, 1, in: line)
             tunnelStatus = capture(match, 2, in: line)?.trimmingCharacters(in: .whitespaces)
             return true
         }
 
-        if let match = Self.expiryRegex.firstMatch(in: line, range: range) {
+        if let match = StatsLineClassifier.expiryRegex.firstMatch(in: line, range: range) {
             sessionExpiry = capture(match, 1, in: line)?.trimmingCharacters(in: .whitespaces)
             return true
         }
 
-        if let match = Self.ciphersuiteRegex.firstMatch(in: line, range: range) {
+        if let match = StatsLineClassifier.ciphersuiteRegex.firstMatch(in: line, range: range) {
             sslCiphersuite = capture(match, 1, in: line)?.trimmingCharacters(in: .whitespaces)
             return true
         }

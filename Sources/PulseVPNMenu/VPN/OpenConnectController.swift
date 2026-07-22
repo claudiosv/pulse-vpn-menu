@@ -119,7 +119,7 @@ final class OpenConnectController: ObservableObject {
                     RuntimeState.clear()
                     return
                 }
-                try? await Task.sleep(nanoseconds: 200_000_000)
+                try? await Task.sleep(for: .milliseconds(200))
             }
 
             guard self.stats.samples.count > sampleCountBefore else {
@@ -334,7 +334,7 @@ final class OpenConnectController: ObservableObject {
                 startStatsTimer(pid: pid)
                 return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
             }
-            try await Task.sleep(nanoseconds: 500_000_000)
+            try await Task.sleep(for: .milliseconds(500))
         }
         throw ConnectError.tunnelTimeout
     }
@@ -359,7 +359,7 @@ final class OpenConnectController: ObservableObject {
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
             if !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") { break }
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(for: .milliseconds(500))
         }
 
         do {
@@ -400,7 +400,7 @@ final class OpenConnectController: ObservableObject {
                 // so a change made in Settings while connected takes
                 // effect on the very next tick.
                 let interval = self.appSettings.statsPollInterval
-                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                try? await Task.sleep(for: .seconds(interval))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
                 try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)

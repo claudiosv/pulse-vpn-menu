@@ -86,6 +86,14 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                Toggle("Hide repeated stats lines in the log", isOn: $appSettings.hideRepeatedStatsLines)
+            } footer: {
+                Text("Every stats poll re-prints the same \"Configured as…\", \"Session authentication will expire…\", \"RX/TX…\", and \"SSL ciphersuite…\" lines. When on, only the first occurrence per connection is shown; the traffic graph still updates from every poll either way.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

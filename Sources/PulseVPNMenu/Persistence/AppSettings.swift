@@ -21,9 +21,24 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Every SIGUSR1 stats poll makes openconnect re-print the same four
+    /// lines (`Configured as ...`, `Session authentication will expire
+    /// at ...`, `RX: ... TX: ...`, `SSL ciphersuite: ...`) with fresh
+    /// values, which floods the Logs window over a long-running
+    /// connection. When on, `LogStore` shows only the first occurrence of
+    /// each per connection (still re-shown after a relaunch/reattach or a
+    /// fresh connect) and hides the repeats — the underlying stats are
+    /// still parsed and graphed either way, this only affects what's
+    /// displayed. Defaults to `true`: the repeats are rarely useful and
+    /// this is the behavior actually being asked for.
+    @Published var hideRepeatedStatsLines: Bool {
+        didSet { save() }
+    }
+
     private struct Document: Codable {
         var statsPollInterval: TimeInterval
         var disconnectOnQuit: Bool
+        var hideRepeatedStatsLines: Bool?
     }
 
     init() {
@@ -31,14 +46,20 @@ final class AppSettings: ObservableObject {
            let document = try? JSONDecoder().decode(Document.self, from: data) {
             statsPollInterval = document.statsPollInterval
             disconnectOnQuit = document.disconnectOnQuit
+            hideRepeatedStatsLines = document.hideRepeatedStatsLines ?? true
         } else {
             statsPollInterval = Self.defaultStatsPollInterval
             disconnectOnQuit = false
+            hideRepeatedStatsLines = true
         }
     }
 
     private func save() {
-        let document = Document(statsPollInterval: statsPollInterval, disconnectOnQuit: disconnectOnQuit)
+        let document = Document(
+            statsPollInterval: statsPollInterval,
+            disconnectOnQuit: disconnectOnQuit,
+            hideRepeatedStatsLines: hideRepeatedStatsLines
+        )
         guard let data = try? JSONEncoder.pretty.encode(document) else { return }
         try? data.write(to: AppPaths.appSettingsFile, options: .atomic)
     }

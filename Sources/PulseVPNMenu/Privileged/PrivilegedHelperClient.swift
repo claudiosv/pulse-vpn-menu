@@ -93,7 +93,7 @@ final class PrivilegedHelperClient: @unchecked Sendable {
                     }
                     lastError = error
                     if attempt < 4 {
-                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        try? await Task.sleep(for: .milliseconds(500))
                     }
                 }
             }

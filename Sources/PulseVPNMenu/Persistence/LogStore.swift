@@ -8,17 +8,27 @@ import Foundation
 final class LogStore: ObservableObject {
     @Published private(set) var lines: [String] = []
 
+    private let appSettings: AppSettings
     private let maxLines = 5000
     private var fileHandle: FileHandle?
     private var source: DispatchSourceFileSystemObject?
     private var readOffset: UInt64 = 0
+
+    /// Which `RepeatableStatsLine` kinds have already been shown since the
+    /// last reset (relaunch, reattach, or fresh connect), so only the first
+    /// occurrence of each is displayed while
+    /// `AppSettings.hideRepeatedStatsLines` is on. The underlying data is
+    /// still fed to `onLine` (and so still parsed/graphed) regardless —
+    /// this only gates what's appended to `lines`.
+    private var shownRepeatableLines: Set<RepeatableStatsLine> = []
 
     /// Invoked once per newly-appended line (including lines seeded from
     /// disk at startup), so other components (stats parsing) can observe
     /// the same stream without duplicating the tailing logic.
     var onLine: ((String) -> Void)?
 
-    init() {
+    init(appSettings: AppSettings) {
+        self.appSettings = appSettings
         seedFromDisk()
         startTailing()
     }
@@ -33,6 +43,7 @@ final class LogStore: ObservableObject {
     func resetForNewConnection() {
         lines.removeAll()
         readOffset = 0
+        shownRepeatableLines.removeAll()
         stopTailing()
         startTailing()
     }
@@ -116,12 +127,32 @@ final class LogStore: ObservableObject {
         guard !text.isEmpty else { return }
         let newLines = text.split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
         guard !newLines.isEmpty else { return }
-        lines.append(contentsOf: newLines)
+
+        for line in newLines {
+            // Always fed to observers (stats parsing) regardless of the
+            // display filter below — that must see every occurrence to
+            // keep the traffic graph and session info current.
+            onLine?(line)
+
+            if shouldDisplay(line) {
+                lines.append(line)
+            }
+        }
         if lines.count > maxLines {
             lines.removeFirst(lines.count - maxLines)
         }
-        for line in newLines {
-            onLine?(line)
+    }
+
+    /// `false` only when `hideRepeatedStatsLines` is on, the line is one of
+    /// the four that repeat on every stats poll, and this is not the first
+    /// time that kind has been seen since the last reset.
+    private func shouldDisplay(_ line: String) -> Bool {
+        guard appSettings.hideRepeatedStatsLines else { return true }
+        guard let kind = StatsLineClassifier.classify(line) else { return true }
+        guard shownRepeatableLines.contains(kind) else {
+            shownRepeatableLines.insert(kind)
+            return true
         }
+        return false
     }
 }

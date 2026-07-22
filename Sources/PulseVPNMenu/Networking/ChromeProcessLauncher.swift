@@ -75,7 +75,7 @@ enum ChromeProcessLauncher {
     /// Chrome's own process has already exited rather than waiting out the
     /// full budget on a browser that's never coming up.
     private static func pollForWebSocketURL(process: Process, port: UInt16) async throws -> URL {
-        try await Task.sleep(nanoseconds: 250_000_000)
+        try await Task.sleep(for: .milliseconds(250))
 
         let versionURL = URL(string: "http://127.0.0.1:\(port)/json/version")!
         var lastError: Error?
@@ -94,7 +94,7 @@ enum ChromeProcessLauncher {
             } catch {
                 lastError = error
                 if attempt < 39 {
-                    try await Task.sleep(nanoseconds: 500_000_000)
+                    try await Task.sleep(for: .milliseconds(500))
                 }
             }
         }
