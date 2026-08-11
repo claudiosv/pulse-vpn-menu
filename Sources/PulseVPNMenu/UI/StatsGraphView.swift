@@ -1,15 +1,23 @@
 import Charts
 import SwiftUI
 
+/// Where a `StatsGraphView` is being drawn, which decides sizing, labels,
+/// and axis detail.
+enum StatsGraphStyle {
+    /// Embedded in the menu bar dropdown: small fonts, tight padding, a
+    /// fixed size, and its own current-throughput readouts.
+    case menu
+    /// Embedded in the Status tab's stats card, which already shows
+    /// duration and cumulative totals above it — so this draws the trend
+    /// line only and takes whatever height the caller gives it.
+    case card
+}
+
 /// A live traffic graph, built on the same `StatsHistory` data the Python
 /// app only ever logged as text
 /// (`logger.info("Current stats: %s", str(self.stats.current))`). Plots
 /// download/upload throughput derived from the raw cumulative RX/TX
 /// counters openconnect reports on each SIGUSR1 poke.
-///
-/// `compact` controls sizing: `true` embeds it directly in the menu bar
-/// dropdown (small fonts, tight padding, fixed size); `false` is meant for
-/// a full-size standalone window.
 ///
 /// This used to be forced into `.menu`-style `MenuBarExtra` content,
 /// rendered offscreen into a bitmap (since native `NSMenu` only knows how
@@ -18,54 +26,41 @@ import SwiftUI
 /// wall: NSMenu treats *any* image-based menu-item content as a small icon
 /// glyph and force-shrinks it, ignoring the SwiftUI-level frame/size
 /// entirely — so the graph was stuck tiny no matter how large the source
-/// bitmap was rendered. Switching `MenuBarExtra` to `.menuBarExtraStyle(.window)`
-/// (a real SwiftUI popover, not NSMenu) removes that constraint entirely,
-/// so this can now be a genuine live `Chart` embedded right in the dropdown.
+/// bitmap was rendered. The menu is now a real `NSMenu` with this view
+/// hosted in a single `NSMenuItem.view` via `NSHostingView`, which removes
+/// that constraint entirely (see `AppDelegate`).
 struct StatsGraphView: View {
     @ObservedObject var stats: StatsHistory
-    var compact: Bool = false
+    var style: StatsGraphStyle = .menu
 
-    private static let byteFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .binary
-        return formatter
-    }()
+    private var isMenu: Bool { style == .menu }
 
     var body: some View {
-        let points = stats.throughputSeries(maxPoints: compact ? 40 : 120)
+        let points = stats.throughputSeries(maxPoints: isMenu ? 40 : 60)
 
-        VStack(alignment: .leading, spacing: compact ? 8 : 16) {
-            if let latest = points.last {
-                HStack(spacing: compact ? 16 : 28) {
+        VStack(alignment: .leading, spacing: 8) {
+            if isMenu, let latest = points.last {
+                HStack(spacing: 16) {
                     label(systemImage: "arrow.down.circle.fill", value: latest.rxBytesPerSecond, color: .blue)
                     label(systemImage: "arrow.up.circle.fill", value: latest.txBytesPerSecond, color: .orange)
                 }
             }
 
             if points.isEmpty {
-                if compact {
-                    Text("No traffic stats yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
-                } else {
-                    ContentUnavailableView(
-                        "No Traffic Yet",
-                        systemImage: "chart.line.uptrend.xyaxis",
-                        description: Text("Stats appear once connected and openconnect starts reporting RX/TX.")
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                Text("No traffic stats yet")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 chart(points: points)
             }
         }
-        .padding(compact ? 12 : 20)
+        .padding(isMenu ? 12 : 0)
         .frame(
-            minWidth: compact ? 280 : 520,
-            idealWidth: compact ? 300 : 600,
-            minHeight: compact ? 140 : 360,
-            idealHeight: compact ? 150 : 400
+            minWidth: isMenu ? 280 : nil,
+            idealWidth: isMenu ? 300 : nil,
+            minHeight: isMenu ? 140 : nil,
+            idealHeight: isMenu ? 150 : nil
         )
     }
 
@@ -78,7 +73,7 @@ struct StatsGraphView: View {
             )
             .foregroundStyle(by: .value("Direction", "Download"))
             .interpolationMethod(.monotone)
-            .lineStyle(StrokeStyle(lineWidth: compact ? 1.5 : 2))
+            .lineStyle(StrokeStyle(lineWidth: 1.5))
 
             LineMark(
                 x: .value("Time", point.time),
@@ -86,41 +81,35 @@ struct StatsGraphView: View {
             )
             .foregroundStyle(by: .value("Direction", "Upload"))
             .interpolationMethod(.monotone)
-            .lineStyle(StrokeStyle(lineWidth: compact ? 1.5 : 2))
+            .lineStyle(StrokeStyle(lineWidth: 1.5))
         }
         .chartForegroundStyleScale(["Download": Color.blue, "Upload": Color.orange])
-        .chartLegend(compact ? .hidden : .visible)
+        .chartLegend(.hidden)
         .chartYAxis {
-            AxisMarks(position: .leading, values: .automatic(desiredCount: compact ? 3 : 6)) { value in
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
-                if !compact {
+                if !isMenu {
                     AxisValueLabel {
                         if let bytes = value.as(Double.self) {
-                            Text(Self.byteFormatter.string(fromByteCount: Int64(bytes)) + "/s")
+                            Text(Traffic.rate(bytes)).font(.system(size: 9))
                         }
                     }
                 }
             }
         }
         .chartXAxis {
-            if compact {
-                AxisMarks(values: .automatic(desiredCount: 0)) { _ in }
-            } else {
-                AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                    AxisGridLine()
-                    AxisValueLabel(format: .dateTime.hour().minute().second())
-                }
-            }
+            AxisMarks(values: .automatic(desiredCount: 0)) { _ in }
         }
     }
 
     private func label(systemImage: String, value: Double, color: Color) -> some View {
-        HStack(spacing: compact ? 4 : 6) {
+        HStack(spacing: 4) {
             Image(systemName: systemImage)
                 .foregroundStyle(color)
-                .font(compact ? .callout : .title3)
-            Text(Self.byteFormatter.string(fromByteCount: Int64(value)) + "/s")
-                .font(compact ? .callout.weight(.medium) : .title3.weight(.medium))
+                .font(.callout)
+            Text(Traffic.rate(value))
+                .font(.callout.weight(.medium))
+                .monospacedDigit()
         }
     }
 }

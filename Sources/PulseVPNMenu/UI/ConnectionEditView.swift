@@ -14,6 +14,9 @@ struct ConnectionEditView: View {
     private let profileID: UUID
     private let existingDSID: String?
     private let onSave: (ConnectionProfile) -> Void
+    /// Captured once from the profile this sheet was opened with, so the
+    /// title doesn't flip from "Add" to "Edit" as soon as a name is typed.
+    private let isNew: Bool
 
     /// Takes a concrete profile (never optional) so this view always has a
     /// distinct identity per profile when presented via `.sheet(item:)` —
@@ -24,6 +27,7 @@ struct ConnectionEditView: View {
     init(profile: ConnectionProfile, onSave: @escaping (ConnectionProfile) -> Void) {
         self.profileID = profile.id
         self.existingDSID = profile.lastDSID
+        self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
         self._vpnURL = State(initialValue: profile.vpnURL)
         self._script = State(initialValue: profile.script ?? "")
@@ -33,28 +37,42 @@ struct ConnectionEditView: View {
         self.onSave = onSave
     }
 
+    /// A sheet has no navigation/toolbar chrome of its own on macOS, so the
+    /// title and the Cancel/Save pair are laid out explicitly here rather
+    /// than left to `.toolbar { ToolbarItem(placement: .confirmationAction) }`,
+    /// which had nowhere to render and left the sheet with no way out but
+    /// Escape.
     var body: some View {
-        Form {
-            Section("Connection") {
-                TextField("Name", text: $name)
-                TextField("VPN URL", text: $vpnURL)
-                    .textContentType(.URL)
-                    .autocorrectionDisabled()
+        VStack(spacing: 0) {
+            Text(isNew ? "Add Connection" : "Edit Connection")
+                .font(.system(size: 16, weight: .bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 16)
+
+            Form {
+                Section("Connection") {
+                    TextField("Name", text: $name, prompt: Text("e.g. coe"))
+                    TextField("VPN URL", text: $vpnURL, prompt: Text("https://vpn.example.edu"))
+                        .textContentType(.URL)
+                        .autocorrectionDisabled()
+                }
+                Section("Advanced") {
+                    TextField("vpnc script (openconnect -s)", text: $script, prompt: Text("vpn-slice …"))
+                    TextField("Post-connect command", text: $post, prompt: Text("none"))
+                    Toggle("Don't replace the default route", isOn: $noDefaultRoute)
+                    Toggle("Verbose openconnect logging", isOn: $debug)
+                }
             }
-            Section("Advanced") {
-                TextField("vpnc script (openconnect -s)", text: $script)
-                TextField("Post-connect command", text: $post)
-                Toggle("Don't replace the default route", isOn: $noDefaultRoute)
-                Toggle("Verbose openconnect logging", isOn: $debug)
-            }
-        }
-        .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 320)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+            .formStyle(.grouped)
+
+            Divider().opacity(0.5)
+
+            HStack {
+                Spacer()
                 Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
+                    .keyboardShortcut(.cancelAction)
                 Button("Save") {
                     onSave(
                         ConnectionProfile(
@@ -70,8 +88,14 @@ struct ConnectionEditView: View {
                     )
                     dismiss()
                 }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
                 .disabled(name.isEmpty || vpnURL.isEmpty)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
         }
+        .frame(width: 520, height: 420)
+        .background(.ultraThinMaterial)
     }
 }

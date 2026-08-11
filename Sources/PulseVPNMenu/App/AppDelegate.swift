@@ -24,17 +24,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var disconnectItem: NSMenuItem!
     private var reconnectItem: NSMenuItem!
 
-    private lazy var settingsWindow = makeWindow(title: "Settings", minSize: NSSize(width: 480, height: 360)) {
-        SettingsView()
-            .environmentObject(self.appState.connectionStore)
-            .environmentObject(self.appState.appSettings)
-    }
-    private lazy var logsWindow = makeWindow(title: "Logs", minSize: NSSize(width: 640, height: 400)) {
-        LogsView().environmentObject(self.appState.logStore)
-    }
-    private lazy var statsWindow = makeWindow(title: "Stats", minSize: NSSize(width: 520, height: 360)) {
-        StatsGraphView(stats: self.appState.controller.stats)
-    }
+    /// One window for everything. Settings, Logs, and Stats used to be
+    /// three separate `NSWindow`s reached from three separate menu items;
+    /// they're now tabs of `MainWindowView`, so the menu items below all
+    /// raise this same window and just select a different tab.
+    private lazy var mainWindow: NSWindow = {
+        let window = makeWindow(title: "Pulse VPN Menu", minSize: NSSize(width: 720, height: 620)) {
+            MainWindowView(appState: self.appState)
+                .environmentObject(self.appState.connectionStore)
+                .environmentObject(self.appState.appSettings)
+                .environmentObject(self.appState.logStore)
+        }
+        // The tab picker is the window's real header, so the title bar is
+        // left transparent and empty — only the traffic lights show.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        return window
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -60,7 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
 
         let header = NSHostingView(
-            rootView: MenuHeaderView(appState: appState, stats: appState.controller.stats)
+            rootView: MenuHeaderView(
+                appState: appState,
+                stats: appState.controller.stats,
+                connectionStore: appState.connectionStore
+            )
         )
         header.frame.size = header.fittingSize
         let headerItem = NSMenuItem()
@@ -83,9 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(reconnectItem)
 
         menu.addItem(.separator())
-        menu.addItem(actionItem(title: "Settings…") { [weak self] in self?.show(self?.settingsWindow) })
-        menu.addItem(actionItem(title: "Logs…") { [weak self] in self?.show(self?.logsWindow) })
-        menu.addItem(actionItem(title: "Stats…") { [weak self] in self?.show(self?.statsWindow) })
+        menu.addItem(actionItem(title: "Open Pulse VPN Menu…") { [weak self] in self?.showMain(tab: .status) })
+        let settingsItem = actionItem(title: "Settings…") { [weak self] in self?.showMain(tab: .general) }
+        settingsItem.keyEquivalent = ","
+        menu.addItem(settingsItem)
+        menu.addItem(actionItem(title: "Logs…") { [weak self] in self?.showMain(tab: .logs) })
 
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Quit") { [weak self] in self?.quit() })
@@ -124,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if profiles.isEmpty {
             connectItem.title = "Add a Connection…"
-            setAction(on: connectItem) { [weak self] in self?.show(self?.settingsWindow) }
+            setAction(on: connectItem) { [weak self] in self?.showMain(tab: .connections) }
         } else if profiles.count == 1, let only = profiles.first {
             connectItem.title = "Connect"
             setAction(on: connectItem) { [weak self] in self?.appState.connect(profile: only) }
@@ -152,8 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// scene — this is an `LSUIElement` agent app with no Dock icon, and
     /// SwiftUI's `openWindow(id:)` doesn't reliably bring such a window (or
     /// the app itself) frontmost. Owning the `NSWindow` directly lets
-    /// `show(_:)` activate the app and raise it synchronously instead of
-    /// needing a `DispatchQueue.main.asyncAfter` guess. `isReleasedWhenClosed
+    /// `showMain(tab:)` activate the app and raise it synchronously instead
+    /// of needing a `DispatchQueue.main.asyncAfter` guess. `isReleasedWhenClosed
     /// = false` keeps the instance (and its state) alive across the red
     /// close button, matching the old scene-backed windows' behavior.
     private func makeWindow<V: View>(
@@ -167,14 +180,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         window.contentMinSize = minSize
         window.isReleasedWhenClosed = false
+        // `NSHostingController`'s fitting size is only as good as the
+        // hosted view's intrinsic size; a view whose tabs are all
+        // `ScrollView`s (no intrinsic size of their own) can't be trusted
+        // to produce a sane initial frame from that alone, so pin it
+        // explicitly rather than hoping `minSize` is what gets picked.
+        window.setContentSize(minSize)
         window.center()
         return window
     }
 
-    private func show(_ window: NSWindow?) {
-        guard let window else { return }
+    private func showMain(tab: MainTab) {
+        appState.selectedTab = tab
         NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        mainWindow.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Action bridging
@@ -212,16 +231,34 @@ private final class ActionSleeve: NSObject {
 private struct MenuHeaderView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var stats: StatsHistory
+    @ObservedObject var connectionStore: ConnectionStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(appState.statusText)
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
-                .padding(.bottom, 6)
-            StatsGraphView(stats: stats, compact: true)
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(appState.isConnected ? Color.green : Color.secondary.opacity(0.6))
+                    .frame(width: 9, height: 9)
+                Text(appState.statusText)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+
+            if let profile = appState.activeProfile {
+                Text(profile.vpnURL)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.horizontal, 14)
+                    .padding(.leading, 17)
+                    .padding(.top, 2)
+            }
+
+            StatsGraphView(stats: stats, style: .menu)
                 .padding(.horizontal, 6)
+                .padding(.top, 4)
                 .padding(.bottom, 4)
         }
         .frame(width: 300)

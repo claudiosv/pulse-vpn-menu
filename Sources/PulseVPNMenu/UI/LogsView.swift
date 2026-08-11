@@ -5,6 +5,9 @@ import SwiftUI
 /// tailing the log file, so this shows everything "since this
 /// connection/app started" — not just what arrived while the window
 /// happened to be open.
+///
+/// Now a tab of the main window rather than a window of its own, so it
+/// fills whatever space it's given instead of imposing a minimum size.
 struct LogsView: View {
     @EnvironmentObject private var logStore: LogStore
 
@@ -29,7 +32,7 @@ struct LogsView: View {
                 }
             }
         }
-        .frame(minWidth: 640, minHeight: 400)
-        .background(Color(nsColor: .textBackgroundColor))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.6))
     }
 }

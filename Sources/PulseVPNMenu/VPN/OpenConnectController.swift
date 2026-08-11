@@ -165,6 +165,22 @@ final class OpenConnectController: ObservableObject {
         return Self.isProcessAlive(pid: state.pid, expectedName: "openconnect")
     }
 
+    /// When the openconnect process currently being tracked was started —
+    /// read off the persisted `RuntimeState`, so a session's duration
+    /// survives an app relaunch that reattaches to a still-running tunnel
+    /// instead of restarting from zero.
+    ///
+    /// Deliberately does *not* re-verify liveness via `isConnected()`
+    /// (which shells out to `/bin/ps`): callers read this from inside a
+    /// SwiftUI view body, already gated on the cheap `AppState.isConnected`
+    /// published flag, and re-running a synchronous subprocess spawn on
+    /// every view-graph update (e.g. once a second from `TimelineView`)
+    /// crashes SwiftUI's AttributeGraph ("modifying state during view
+    /// update") — the process spawn re-enters the run loop mid-render.
+    var connectedSince: Date? {
+        runtimeState?.startedAt
+    }
+
     var connectedInterfaceDescription: String? {
         guard isConnected(), let (name, ip) = NetworkInterfaces.findVPNInterface() else { return nil }
         return "\(name), \(ip)"
