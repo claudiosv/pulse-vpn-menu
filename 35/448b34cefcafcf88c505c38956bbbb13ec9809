@@ -1,0 +1,83 @@
+Sources/PulseVPNMenu/UI/ConnectionEditView.swift
+  s_25b08a153cd5a4::t_edbda706873fe3 17-19
+  s_25b08a153cd5a4::t_d8464984793af0 30
+  s_25b08a153cd5a4::t_44802dccf04e47 40-44,46-66,68-73,75,91-92,95-96,98-99
+Sources/PulseVPNMenu/UI/StatusView.swift
+  s_25b08a153cd5a4::t_ab2d1d653831c3 1-267
+Sources/PulseVPNMenu/UI/LogsView.swift
+  s_25b08a153cd5a4::t_2d520447a544b7 8-10
+  s_25b08a153cd5a4::t_0ff1f361c6ee88 35-36
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_25b08a153cd5a4::t_65123c607d30e8 172-179,181
+  s_25b08a153cd5a4::t_34141788dafec2 168-171,180,182-183
+README.md
+  s_25b08a153cd5a4::t_1ba2555d21a8f6 38-57
+Sources/PulseVPNMenu/App/AppDelegate.swift
+  s_25b08a153cd5a4::t_4fecaaf880aeea 193-194,196
+  s_25b08a153cd5a4::t_e1a058df473c9f 234,238-259,261
+  s_25b08a153cd5a4::t_db2346892aba01 183-188
+  s_25b08a153cd5a4::t_0452e47e6125cd 168-169
+  s_25b08a153cd5a4::t_f00a50ef84faa4 140
+  s_25b08a153cd5a4::t_6c590f84a2cdc8 27-44
+  s_25b08a153cd5a4::t_e5f8e04c658867 70-74
+  s_25b08a153cd5a4::t_e5b959052cff8e 97-101
+Sources/PulseVPNMenu/UI/GeneralView.swift
+  s_25b08a153cd5a4::t_7e1380f55ecca0 1-59
+Sources/PulseVPNMenu/UI/ConnectionsView.swift
+  s_25b08a153cd5a4::t_018878cfb55240 1-153
+Sources/PulseVPNMenu/UI/GlassCard.swift
+  s_25b08a153cd5a4::t_984c9322cea0aa 1-36
+Sources/PulseVPNMenu/UI/MainWindowView.swift
+  s_25b08a153cd5a4::t_25fffc41036d53 1-47,56-71
+  s_25b08a153cd5a4::t_c1d298817c763c 48-55
+Sources/PulseVPNMenu/App/AppState.swift
+  s_25b08a153cd5a4::t_63ef96640f4ad3 69-95,97-115
+  s_25b08a153cd5a4::t_30fef168cc2a48 58,62
+  s_25b08a153cd5a4::t_5734e82663a774 25-28
+  s_25b08a153cd5a4::t_c9a841df51b83f 96
+  s_25b08a153cd5a4::t_a538b36da7d81e 18-23
+  s_25b08a153cd5a4::t_a0f61bf190fd58 24
+Sources/PulseVPNMenu/UI/StatsGraphView.swift
+  s_25b08a153cd5a4::t_b747b0cba35bf3 4-15,29-31,34,36,39,41-43,50-53,58,60-63,76,84,87,89,91,94,101,106,109-112
+Sources/PulseVPNMenu/UI/Formatting.swift
+  s_25b08a153cd5a4::t_b56eb5bf77b878 1-6,12-39
+  s_25b08a153cd5a4::t_95093724ebfb07 7-11
+VPNHelper/Package.swift
+  s_25b08a153cd5a4::t_a5759d179128b6 1-15
+VPNHelper/README.md
+  s_25b08a153cd5a4::t_363c8fe65589ed 1-39
+VPNHelper/Sources/VPNHelper/ConnectionsView.swift
+  s_25b08a153cd5a4::t_8f7aa42a686ee9 1-85
+VPNHelper/Sources/VPNHelper/ContentView.swift
+  s_25b08a153cd5a4::t_069ccaa0766b67 1-64
+VPNHelper/Sources/VPNHelper/EditConnectionSheet.swift
+  s_25b08a153cd5a4::t_ef3d35d8377923 1-50
+VPNHelper/Sources/VPNHelper/GeneralView.swift
+  s_25b08a153cd5a4::t_56a3c5069df54a 1-59
+VPNHelper/Sources/VPNHelper/MenuBarView.swift
+  s_25b08a153cd5a4::t_b40301dd28dfd1 1-52
+VPNHelper/Sources/VPNHelper/Models.swift
+  s_25b08a153cd5a4::t_b86f6bb615b3b4 1-41
+VPNHelper/Sources/VPNHelper/StatusView.swift
+  s_25b08a153cd5a4::t_419262965bbf8b 1-245
+VPNHelper/Sources/VPNHelper/VPNHelperApp.swift
+  s_25b08a153cd5a4::t_8dfe27761dd28e 1-26
+VPNHelper/Sources/VPNHelper/VPNStore.swift
+  s_25b08a153cd5a4::t_67fd951efc1961 1-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "35448b34cefcafcf88c505c38956bbbb13ec9809",
+  "prompts": {},
+  "sessions": {
+    "s_25b08a153cd5a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "61d63ad4-bbb6-4847-8979-4af97d86d1bb",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
