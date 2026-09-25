@@ -1,0 +1,38 @@
+Sources/PulseVPNMenu/App/AppDelegate.swift
+  s_4bb7066cee8910::t_7731cdd905f3a1 47-52
+Sources/PulseVPNMenu/Persistence/AppSettings.swift
+  s_4bb7066cee8910::t_f0b967651c067e 38-53,58-59,68-69,74-75,83-85
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_4bb7066cee8910::t_0407acb7688058 61-81,91-96,309,432,440-443,461-534
+  s_0cf60a82a32e5c::t_949b0e1bf57e70 427-431,435-439,444-460
+Sources/PulseVPNMenu/App/AppState.swift
+  s_4bb7066cee8910::t_7731cdd905f3a1 47-49,59-63
+Sources/PulseVPNMenu/UI/GeneralView.swift
+  s_4bb7066cee8910::t_7731cdd905f3a1 54-77,82-87
+Sources/PulseVPNMenu/App/Notifier.swift
+  s_4bb7066cee8910::t_34901ee87b7d31 1-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "6225930f5d692e96ce3196dfffd8100b976c270e",
+  "prompts": {},
+  "sessions": {
+    "s_0cf60a82a32e5c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b636f4ee-bc1b-4f91-a19c-c5c5110b619c",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    },
+    "s_4bb7066cee8910": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "784e7667-be30-406c-806d-a2dff152e80d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
