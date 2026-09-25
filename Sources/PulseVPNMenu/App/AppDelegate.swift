@@ -44,6 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Notifier.shared.install()
+        let settings = appState.appSettings
+        if settings.notifyOnUnexpectedDisconnect || settings.notifyOnTransientDrops {
+            Notifier.shared.requestAuthorizationIfNeeded()
+        }
+
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = appState.statusImage
         item.menu = buildMenu()

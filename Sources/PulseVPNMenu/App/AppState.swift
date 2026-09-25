@@ -44,6 +44,9 @@ final class AppState: ObservableObject {
         self.logStore = logStore
         self.appSettings = appSettings
         self.controller = controller
+        controller.profileName = { [weak connectionStore] id in
+            connectionStore?.profile(id: id)?.name
+        }
 
         refresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.statusRefreshInterval, repeats: true) { [weak self] _ in
@@ -53,6 +56,11 @@ final class AppState: ObservableObject {
     }
 
     func refresh() {
+        // Piggybacks on this timer to notice openconnect exiting without
+        // being asked to; that path cleans up and re-refreshes when done.
+        Task {
+            await controller.handleUnexpectedExitIfNeeded()
+        }
         let connected = controller.isConnected()
         isConnected = connected
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil

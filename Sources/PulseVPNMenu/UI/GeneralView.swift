@@ -51,9 +51,39 @@ struct GeneralView: View {
                             .cardFootnote()
                     }
                 }
+
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $appSettings.notifyOnUnexpectedDisconnect) {
+                            Text("Notify when the VPN disconnects unexpectedly")
+                                .font(.system(size: 13.5))
+                        }
+                        .toggleStyle(.switch)
+                        Text("Posts a notification when openconnect exits without you clicking Disconnect — the session expired, it gave up reconnecting, or it crashed.")
+                            .cardFootnote()
+                    }
+                }
+
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $appSettings.notifyOnTransientDrops) {
+                            Text("Also notify on transient drops")
+                                .font(.system(size: 13.5))
+                        }
+                        .toggleStyle(.switch)
+                        Text("Posts a notification when openconnect loses the link and starts retrying on its own (for up to 30s), and another when it reconnects.")
+                            .cardFootnote()
+                    }
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 18)
+        }
+        .onChange(of: appSettings.notifyOnUnexpectedDisconnect) { _, isOn in
+            if isOn { Notifier.shared.requestAuthorizationIfNeeded() }
+        }
+        .onChange(of: appSettings.notifyOnTransientDrops) { _, isOn in
+            if isOn { Notifier.shared.requestAuthorizationIfNeeded() }
         }
     }
 }

@@ -35,10 +35,28 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Post a macOS notification when openconnect exits without the user
+    /// having asked for it (session expiry, `--reconnect-timeout` running
+    /// out, a crash, an outside `kill`). Defaults to `true`: silently
+    /// losing the tunnel is exactly what this exists to surface.
+    @Published var notifyOnUnexpectedDisconnect: Bool {
+        didSet { save() }
+    }
+
+    /// Also notify when openconnect loses the link but is still retrying
+    /// on its own (the process stays alive for up to `--reconnect-timeout`),
+    /// plus once more when it comes back. Defaults to `false` — flaky
+    /// networks make this noisy.
+    @Published var notifyOnTransientDrops: Bool {
+        didSet { save() }
+    }
+
     private struct Document: Codable {
         var statsPollInterval: TimeInterval
         var disconnectOnQuit: Bool
         var hideRepeatedStatsLines: Bool?
+        var notifyOnUnexpectedDisconnect: Bool?
+        var notifyOnTransientDrops: Bool?
     }
 
     init() {
@@ -47,10 +65,14 @@ final class AppSettings: ObservableObject {
             statsPollInterval = document.statsPollInterval
             disconnectOnQuit = document.disconnectOnQuit
             hideRepeatedStatsLines = document.hideRepeatedStatsLines ?? true
+            notifyOnUnexpectedDisconnect = document.notifyOnUnexpectedDisconnect ?? true
+            notifyOnTransientDrops = document.notifyOnTransientDrops ?? false
         } else {
             statsPollInterval = Self.defaultStatsPollInterval
             disconnectOnQuit = false
             hideRepeatedStatsLines = true
+            notifyOnUnexpectedDisconnect = true
+            notifyOnTransientDrops = false
         }
     }
 
@@ -58,7 +80,9 @@ final class AppSettings: ObservableObject {
         let document = Document(
             statsPollInterval: statsPollInterval,
             disconnectOnQuit: disconnectOnQuit,
-            hideRepeatedStatsLines: hideRepeatedStatsLines
+            hideRepeatedStatsLines: hideRepeatedStatsLines,
+            notifyOnUnexpectedDisconnect: notifyOnUnexpectedDisconnect,
+            notifyOnTransientDrops: notifyOnTransientDrops
         )
         guard let data = try? JSONEncoder.pretty.encode(document) else { return }
         try? data.write(to: AppPaths.appSettingsFile, options: .atomic)

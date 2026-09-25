@@ -58,6 +58,27 @@ final class OpenConnectController: ObservableObject {
     /// the interface existing.
     private var espEstablished = false
 
+    /// Set when openconnect logs that it lost the link but is retrying on
+    /// its own (the process stays alive — see `transientDropMarkers`), and
+    /// cleared once ESP is re-established. Only one "dropped" notification
+    /// is posted per episode, however many retry lines follow.
+    private var inTransientDrop = false
+
+    /// openconnect's own messages for "the link went away, retrying within
+    /// `--reconnect-timeout`" (DPD timeouts, the server closing the
+    /// session, `ssl_reconnect`'s backoff lines). Matched case-insensitively.
+    private static let transientDropMarkers = [
+        "detected dead peer",
+        "server closed connection",
+        "failed to reconnect to host",
+        "remaining timeout",
+    ]
+
+    /// Looks up a profile's display name for notifications — set by
+    /// `AppState`, which owns the `ConnectionStore` this controller
+    /// otherwise has no reference to.
+    var profileName: ((UUID) -> String?)?
+
     static let tunnelTimeout: TimeInterval = 30
 
     init(logStore: LogStore, appSettings: AppSettings) {
@@ -67,6 +88,12 @@ final class OpenConnectController: ObservableObject {
             self?.stats.ingest(line)
             if line.contains("ESP session established with server") {
                 self?.espEstablished = true
+                self?.transientDropEnded()
+            } else {
+                let lowered = line.lowercased()
+                if Self.transientDropMarkers.contains(where: { lowered.contains($0) }) {
+                    self?.transientDropStarted()
+                }
             }
         }
 
@@ -279,6 +306,7 @@ final class OpenConnectController: ObservableObject {
         logStore.resetForNewConnection()
         stats.clear()
         espEstablished = false
+        inTransientDrop = false
 
         var argv = [openconnectPath]
         if let script = profile.script, !script.isEmpty {
@@ -396,8 +424,114 @@ final class OpenConnectController: ObservableObject {
 
     func reconnect() async throws {
         guard let state = runtimeState else { return }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        espEstablished = false
+        inTransientDrop = false
         try await PrivilegedHelperClient.shared.requestReconnect(pid: state.pid)
         logStore.append("Sent SIGUSR2 to openconnect; reconnecting.\n")
+
+        let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
+        while Date() < deadline {
+            if !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") {
+                logStore.append("Reconnect failed: openconnect exited.\n")
+                // The user asked for a reconnect, not a disconnect — losing
+                // the tunnel here is just as unrequested as below.
+                notifyLost(state: state, reason: "Reconnect failed.")
+                await tearDownAfterExit(state: state)
+                return
+            }
+
+            if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
+                var updated = state
+                updated.vpnGatewayIP = ip
+                updated.save()
+                runtimeState = updated
+                if !updated.noDefaultRoute {
+                    try await routeManager.setDefaultRoute(gatewayIP: ip)
+                }
+                logStore.append("Reconnected; VPN interface IP: \(ip)\n")
+                return
+            }
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        logStore.append("Reconnect timed out waiting for the tunnel to come back up.\n")
+    }
+
+    // MARK: - Unrequested disconnects
+
+    /// Called from `AppState`'s periodic refresh. Catches openconnect
+    /// exiting on its own — session expiry, `--reconnect-timeout` running
+    /// out, a crash, an outside `kill` — and does the cleanup `disconnect()`
+    /// would have done, plus an optional notification. Every user-requested
+    /// path (`connect`, `disconnect`, `reconnect`, Quit) runs under
+    /// `isBusy` and clears `runtimeState` itself, so it never gets here.
+    func handleUnexpectedExitIfNeeded() async {
+        guard !isBusy, let state = runtimeState else { return }
+        guard !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        let status = try? await PrivilegedHelperClient.shared.processStatus(pid: state.pid)
+        let reason: String
+        if let status, status.known, !status.running {
+            logStore.append("openconnect exited unexpectedly (code \(status.exitCode)).\n")
+            reason = status.exitCode == 2
+                ? "The session expired or was rejected by the server."
+                : "openconnect exited with code \(status.exitCode)."
+        } else {
+            logStore.append("openconnect exited unexpectedly.\n")
+            reason = "openconnect exited unexpectedly."
+        }
+        notifyLost(state: state, reason: reason)
+        await tearDownAfterExit(state: state)
+    }
+
+    /// Route/state cleanup after openconnect has already exited on its own
+    /// (no SIGTERM to send).
+    private func tearDownAfterExit(state: RuntimeState) async {
+        stopStatsTimer()
+        inTransientDrop = false
+        do {
+            try await routeManager.cleanupAfterDisconnect(
+                vpnGatewayIP: state.vpnGatewayIP,
+                hostname: state.hostname,
+                noDefaultRoute: state.noDefaultRoute,
+                originalGatewayIP: state.originalGatewayIP
+            )
+        } catch {
+            logStore.append("Route cleanup failed: \(error)\n")
+        }
+        runtimeState = nil
+        RuntimeState.clear()
+        connectedProfileID = nil
+    }
+
+    private func notifyLost(state: RuntimeState, reason: String) {
+        guard appSettings.notifyOnUnexpectedDisconnect else { return }
+        Notifier.shared.post(.lost, title: "VPN disconnected", body: "\(profileLabel(state)): \(reason)")
+    }
+
+    private func transientDropStarted() {
+        guard let state = runtimeState, !isBusy, !inTransientDrop else { return }
+        inTransientDrop = true
+        logStore.append("Connection dropped; openconnect is reconnecting on its own.\n")
+        guard appSettings.notifyOnTransientDrops else { return }
+        Notifier.shared.post(.dropped, title: "VPN connection dropped", body: "\(profileLabel(state)): reconnecting…")
+    }
+
+    private func transientDropEnded() {
+        guard inTransientDrop else { return }
+        inTransientDrop = false
+        logStore.append("Connection restored.\n")
+        guard appSettings.notifyOnTransientDrops, let state = runtimeState else { return }
+        Notifier.shared.post(.restored, title: "VPN reconnected", body: "\(profileLabel(state)) is back up.")
+    }
+
+    private func profileLabel(_ state: RuntimeState) -> String {
+        state.profileID.flatMap { profileName?($0) } ?? "VPN"
     }
 
     // MARK: - Stats timer
