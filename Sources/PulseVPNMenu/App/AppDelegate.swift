@@ -162,9 +162,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Windows
 
     /// A plain `NSWindow` + `NSHostingController`, not a SwiftUI `Window`
-    /// scene — this is an `LSUIElement` agent app with no Dock icon, and
-    /// SwiftUI's `openWindow(id:)` doesn't reliably bring such a window (or
-    /// the app itself) frontmost. Owning the `NSWindow` directly lets
+    /// scene — this is an `LSUIElement` agent app with no Dock icon by
+    /// default (see `showMain(tab:)`, which switches to a Dock icon the
+    /// first time this window is opened and keeps it for the rest of the
+    /// session — `applicationShouldHandleReopen(_:hasVisibleWindows:)`
+    /// below then makes clicking that Dock icon reopen the status bar menu
+    /// rather than a blank window), and SwiftUI's `openWindow(id:)` doesn't
+    /// reliably bring such a window (or the app itself) frontmost. Owning
+    /// the `NSWindow` directly lets
     /// `showMain(tab:)` activate the app and raise it synchronously instead
     /// of needing a `DispatchQueue.main.asyncAfter` guess. `isReleasedWhenClosed
     /// = false` keeps the instance (and its state) alive across the red
@@ -192,8 +197,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showMain(tab: MainTab) {
         appState.selectedTab = tab
-        NSApp.activate(ignoringOtherApps: true)
-        mainWindow.makeKeyAndOrderFront(nil)
+        // Gain a Dock icon (and Cmd+Tab presence) for the rest of the
+        // session, not just while this window is open — it never reverts
+        // to `.accessory`. Clicking that Dock icon later (with no window
+        // open) is handled below by reopening the status bar menu instead
+        // of this window.
+        NSApp.setActivationPolicy(.regular)
+        // `activate`/`makeKeyAndOrderFront` right after `setActivationPolicy`
+        // can land before the Dock has processed the policy change, which is
+        // what leaves the new tile without its running-app indicator dot.
+        // Giving it one run-loop hop first is the standard fix.
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            self?.mainWindow.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// Fires when the Dock icon is clicked while the app has no visible
+    /// window (e.g. after closing `mainWindow`, or right after launch on
+    /// the rare path where `.regular` was already set). There's no window
+    /// scene for AppKit to reopen on its own, so this stands in for that:
+    /// popping the same status bar menu a click on the menu bar icon would.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !flag else { return true }
+        statusItem.button?.performClick(nil)
+        return false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
     }
 
     // MARK: - Action bridging
