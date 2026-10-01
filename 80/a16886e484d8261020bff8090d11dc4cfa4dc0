@@ -1,0 +1,23 @@
+notarize.sh
+  s_40afeb4dc8aec1::t_3a953076f3c097 1-59
+build.sh
+  s_40afeb4dc8aec1::t_3a953076f3c097 7,20
+  s_40afeb4dc8aec1::t_7d7523b120d2b5 21-27
+  s_40afeb4dc8aec1::t_02d376d41127ce 114-117,124-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "80a16886e484d8261020bff8090d11dc4cfa4dc0",
+  "prompts": {},
+  "sessions": {
+    "s_40afeb4dc8aec1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7a91f650-3fa9-4fb5-9678-6a9dc39cf125",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
