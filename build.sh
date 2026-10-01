@@ -4,6 +4,7 @@
 #
 # Usage: ./build.sh            build -> dist/Pulse VPN Menu.app
 #        ./build.sh --install  also install to /Applications
+#        ./build.sh --notarize also notarize + staple (see notarize.sh)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,9 +17,14 @@ VERSION="0.1.0"
 SIGN_IDENTITY="Developer ID Application: Claudio Spiess (5HN43G3472)"
 
 INSTALL=false
-if [[ "${1:-}" == "--install" ]]; then
-    INSTALL=true
-fi
+NOTARIZE=false
+for arg in "$@"; do
+    case "$arg" in
+        --install) INSTALL=true ;;
+        --notarize) NOTARIZE=true ;;
+        *) echo "unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
 
 echo "==> swift build -c release"
 swift build -c release
@@ -105,15 +111,18 @@ echo "==> Verifying signatures"
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 codesign -d -r- "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
 
+if [[ "${NOTARIZE}" == "true" ]]; then
+    ./notarize.sh "${APP_BUNDLE}"
+fi
+
 echo
 echo "Built: $(pwd)/${APP_BUNDLE}"
 echo
 echo "Note: SMAppService LaunchDaemons require an admin to approve them in"
 echo "System Settings > General > Login Items & Extensions the first time"
 echo "the app registers the helper (first Connect attempt). Apple's docs"
-echo "also state apps containing LaunchDaemons must be notarized; this"
-echo "build is NOT notarized — if daemon registration fails with a"
-echo "signature-shaped error, notarization will need to be set up."
+echo "also state apps containing LaunchDaemons must be notarized; pass"
+echo "--notarize (one-time setup: ./notarize.sh --store-credentials ...)."
 
 if [[ "${INSTALL}" == "true" ]]; then
     echo "==> Installing to /Applications"
