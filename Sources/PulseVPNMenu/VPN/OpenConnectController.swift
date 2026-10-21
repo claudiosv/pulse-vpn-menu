@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Darwin
 import ServiceManagement
@@ -5,6 +6,8 @@ import ServiceManagement
 enum ConnectExitOutcome {
     case up
     case rejectedCookie
+    /// The server certificate failed validation; the user can pin it.
+    case untrustedCert(CertFailure)
     case failed(Int32)
 }
 
@@ -16,22 +19,21 @@ struct ConnectAttemptResult {
 }
 
 enum ConnectError: Error, CustomStringConvertible {
-    case openconnectNotFound
     case tunnelTimeout
-    case pidNotResolved
+    case noCookie
 
     var description: String {
         switch self {
-        case .openconnectNotFound: return "Could not locate the openconnect binary."
         case .tunnelTimeout: return "Could not find a valid VPN interface with an IPv4 address."
-        case .pidNotResolved: return "openconnect did not report its PID in time."
+        case .noCookie: return "Could not obtain a login cookie."
         }
     }
 }
 
 /// Mirrors `launcher.py`'s `OpenconnectPulseLauncher`: authenticates (via
-/// `DSIDAuthenticator`), launches openconnect as root (via the privileged
-/// helper daemon, `PrivilegedHelperClient`), waits for the tunnel interface
+/// `DSIDAuthenticator`), starts the VPN session in the privileged helper
+/// daemon (`PrivilegedHelperClient`; libopenconnect runs in-process there,
+/// as root), waits for the tunnel interface
 /// to come up, manages routes (`RouteManager`), and delivers signals for
 /// stop/reconnect/stats.
 @MainActor
@@ -97,113 +99,85 @@ final class OpenConnectController: ObservableObject {
             }
         }
 
-        if let state = RuntimeState.load(), Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") {
-            // Every relaunch while already connected — not just the
-            // crash/pid-file-recovery case below — needs to reattach, or
-            // the stats timer (and thus the periodic stats-request) never
-            // resumes and no more RX/TX stats ever show up in the log.
-            verifyAndReattach(state: state)
-        } else if let recovered = Self.recoverStateFromPidFile() {
-            // The app was killed/crashed/relaunched without a clean
-            // disconnect, but openconnect itself is still running (it's a
-            // detached, privileged process independent of our own
-            // lifetime) — reattach instead of showing "disconnected" while
-            // a real tunnel is up underneath us. This reattachment is
-            // entirely unprivileged (kill(pid,0) + ps name check) and
-            // doesn't depend on the helper at all.
-            recovered.save()
-            verifyAndReattach(state: recovered)
-        } else {
-            RuntimeState.clear()
+        // A session lives in the helper and outlives the app: if we recorded
+        // one, ask the helper whether it's still up and reattach. (Only when
+        // the helper is already approved — launch must not trigger a
+        // registration prompt.)
+        if let state = RuntimeState.load() {
+            if PrivilegedHelperClient.shared.status == .enabled {
+                verifyAndReattach(state: state)
+            } else {
+                RuntimeState.clear()
+            }
         }
     }
 
-    /// A pid existing and matching the expected process name isn't proof
-    /// the tunnel is actually up — openconnect can be hung, mid-reconnect,
-    /// or wedged. Rather than flipping straight to "connected" on process
-    /// presence alone, request a stats update and wait for a real sample to
-    /// come back (`StatsHistory` only grows once a genuine SIGUSR1 dump is
-    /// parsed from the log) before setting `runtimeState`, which is what
-    /// `isConnected()` reports on. `isBusy` is held during the check so the
-    /// UI reads "working…" instead of flashing "disconnected".
+    /// The helper reporting a running session isn't proof the tunnel is
+    /// actually up — it can be wedged or mid-reconnect. Rather than flipping
+    /// straight to "connected", request a stats update and wait for a real
+    /// sample to come back (`StatsHistory` only grows once a genuine stats
+    /// line is parsed from the log) before setting `runtimeState`, which is
+    /// what `isConnected()` reports on. `isBusy` is held during the check so
+    /// the UI reads "working…" instead of flashing "disconnected".
     private func verifyAndReattach(state: RuntimeState) {
         isBusy = true
-        logStore.append("Found an existing openconnect process (pid \(state.pid)); confirming it's responding…\n")
+        logStore.append("Found a recorded VPN session; confirming it's still running…\n")
         Task { [weak self] in
             guard let self else { return }
             defer { self.isBusy = false }
 
-            _ = try? await PrivilegedHelperClient.shared.ensureRegistered()
+            guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else {
+                // Helper unreachable — leave the recorded state alone so a
+                // later launch can try again.
+                self.logStore.append("Could not reach the helper; not reattaching.\n")
+                return
+            }
+            guard status.isRunning else {
+                self.logStore.append("The recorded VPN session is no longer running.\n")
+                RuntimeState.clear()
+                return
+            }
 
             let sampleCountBefore = self.stats.samples.count
-            try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: state.pid)
+            try? await PrivilegedHelperClient.shared.requestStatsUpdate()
 
             let deadline = Date().addingTimeInterval(5)
             while Date() < deadline {
                 if self.stats.samples.count > sampleCountBefore { break }
-                guard Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") else {
-                    self.logStore.append("Process disappeared while confirming; not reattaching.\n")
-                    RuntimeState.clear()
-                    return
-                }
                 try? await Task.sleep(for: .milliseconds(200))
             }
 
             guard self.stats.samples.count > sampleCountBefore else {
-                self.logStore.append("Could not confirm the existing openconnect process is responding; not reattaching.\n")
+                self.logStore.append("Could not confirm the existing VPN session is responding; not reattaching.\n")
                 RuntimeState.clear()
                 return
             }
 
             self.runtimeState = state
             self.connectedProfileID = state.profileID
-            self.logStore.append("Confirmed and reattached to openconnect (pid \(state.pid)).\n")
-            self.startStatsTimer(pid: state.pid)
+            self.logStore.append("Confirmed and reattached to the VPN session.\n")
+            self.startStatsTimer()
         }
-    }
-
-    /// Falls back to the stable PID file (as opposed to the full
-    /// `RuntimeState` blob, which may be missing or stale if the app died
-    /// before writing it) to rediscover an already-running openconnect
-    /// process. Profile identity, original gateway, and hostname are
-    /// unknowable in this case; `noDefaultRoute` defaults to `true` so a
-    /// later disconnect doesn't guess at route changes it has no record of
-    /// — openconnect/vpnc-script clean up their own routes on SIGTERM
-    /// regardless.
-    private static func recoverStateFromPidFile() -> RuntimeState? {
-        guard let text = try? String(contentsOf: AppPaths.openconnectPidFile, encoding: .utf8) else { return nil }
-        guard let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)), pid > 0 else { return nil }
-        guard isProcessAlive(pid: pid, expectedName: "openconnect") else { return nil }
-        return RuntimeState(
-            pid: pid,
-            profileID: nil,
-            startedAt: Date(),
-            vpnGatewayIP: NetworkInterfaces.findVPNInterface()?.ip,
-            originalGatewayIP: nil,
-            hostname: nil,
-            noDefaultRoute: true
-        )
     }
 
     // MARK: - Status
 
+    /// Cheap and synchronous (read from SwiftUI and the status timer); a
+    /// session that died on its own is noticed by
+    /// `handleUnexpectedExitIfNeeded`, which clears `runtimeState`.
     func isConnected() -> Bool {
-        guard let state = runtimeState else { return false }
-        return Self.isProcessAlive(pid: state.pid, expectedName: "openconnect")
+        runtimeState != nil
     }
 
-    /// When the openconnect process currently being tracked was started —
+    /// When the VPN session currently being tracked was started —
     /// read off the persisted `RuntimeState`, so a session's duration
     /// survives an app relaunch that reattaches to a still-running tunnel
     /// instead of restarting from zero.
     ///
-    /// Deliberately does *not* re-verify liveness via `isConnected()`
-    /// (which shells out to `/bin/ps`): callers read this from inside a
-    /// SwiftUI view body, already gated on the cheap `AppState.isConnected`
-    /// published flag, and re-running a synchronous subprocess spawn on
-    /// every view-graph update (e.g. once a second from `TimelineView`)
-    /// crashes SwiftUI's AttributeGraph ("modifying state during view
-    /// update") — the process spawn re-enters the run loop mid-render.
+    /// Callers read this from inside a SwiftUI view body, so it must stay a
+    /// plain property read — anything that re-enters the run loop mid-render
+    /// (a subprocess spawn, a synchronous XPC call) crashes SwiftUI's
+    /// AttributeGraph ("modifying state during view update").
     var connectedSince: Date? {
         runtimeState?.startedAt
     }
@@ -273,10 +247,20 @@ final class OpenConnectController: ObservableObject {
                 case .rejectedCookie:
                     workingProfile.lastDSID = nil
                     store.updateDSID(profileID: workingProfile.id, dsid: nil)
-                    logStore.append("openconnect rejected the DSID cookie; re-authenticating.\n")
+                    logStore.append("The server rejected the DSID cookie; re-authenticating.\n")
+                    continue
+                case .untrustedCert(let failure):
+                    guard let hash = failure.hash,
+                          confirmTrust(failure, hash: hash, profile: workingProfile) else {
+                        logStore.append("Server certificate not trusted: \(failure.reason)\n")
+                        return
+                    }
+                    workingProfile.pinnedCertHash = hash
+                    store.updatePinnedCertHash(profileID: workingProfile.id, hash: hash)
+                    logStore.append("Pinned server certificate \(hash).\n")
                     continue
                 case .failed(let code):
-                    logStore.append("openconnect exited with code \(code) before the tunnel came up.\n")
+                    logStore.append("The VPN session ended with code \(code) before the tunnel came up.\n")
                     return
                 }
             } catch {
@@ -290,7 +274,6 @@ final class OpenConnectController: ObservableObject {
     /// wait for the tunnel, set up routes. Mirrors `connect_once()` in
     /// `launcher.py`.
     func connectOnce(profile: ConnectionProfile) async throws -> ConnectAttemptResult {
-        let openconnectPath = Self.findOpenConnectPath()
         let hostname = URL(string: profile.vpnURL)?.host
         let originalGatewayIP = NetworkInterfaces.defaultGatewayIP()
 
@@ -299,7 +282,7 @@ final class OpenConnectController: ObservableObject {
             dsid = try await authenticator.fetchDSID(vpnURL: profile.vpnURL)
         }
         guard let dsidValue = dsid, !dsidValue.isEmpty else {
-            throw ConnectError.pidNotResolved
+            throw ConnectError.noCookie
         }
 
         try AppPaths.prepareForNewConnection()
@@ -308,34 +291,16 @@ final class OpenConnectController: ObservableObject {
         espEstablished = false
         inTransientDrop = false
 
-        var argv = [openconnectPath]
-        if let script = profile.script, !script.isEmpty {
-            argv.append(contentsOf: ["-s", script])
-        } else if let script = Self.bundledVPNCScriptPath {
-            argv.append(contentsOf: ["-s", script])
-        }
-        argv.append(contentsOf: [
-            "--reconnect-timeout", "30",
-            "--force-dpd", "5",
-            "-C", dsidValue,
-            "--protocol=pulse",
-            profile.vpnURL,
-        ])
-
-        // The helper spawns openconnect itself and hands back its real PID
-        // synchronously — no more sudo-forking workaround, no pidfile
-        // polling.
-        let pid = try await PrivilegedHelperClient.shared.launchOpenConnect(
-            argv: argv,
+        let script = profile.script.flatMap { $0.isEmpty ? nil : $0 } ?? Self.bundledVPNCScriptPath
+        try await PrivilegedHelperClient.shared.startSession(
+            url: profile.vpnURL,
+            cookie: dsidValue,
+            vpncScript: script,
+            pinnedCertHash: profile.pinnedCertHash,
             logFile: AppPaths.currentLogFile
         )
 
-        // Keep the PID file current so crash-recovery
-        // (`recoverStateFromPidFile`) keeps working exactly as before.
-        try? String(pid).write(to: AppPaths.openconnectPidFile, atomically: true, encoding: .utf8)
-
         var state = RuntimeState(
-            pid: pid,
             profileID: profile.id,
             startedAt: Date(),
             vpnGatewayIP: nil,
@@ -348,22 +313,17 @@ final class OpenConnectController: ObservableObject {
 
         let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
         while Date() < deadline {
-            let (known, running, exitCode) = try await PrivilegedHelperClient.shared.processStatus(pid: pid)
-            if known, !running {
+            let status = try await PrivilegedHelperClient.shared.sessionStatus()
+            if !status.isRunning {
                 runtimeState = nil
                 RuntimeState.clear()
-                if exitCode == 2 {
+                if let failure = status.certFailure {
+                    return ConnectAttemptResult(outcome: .untrustedCert(failure), dsidUsed: dsidValue)
+                }
+                if status.exitCode == -EPERM {
                     return ConnectAttemptResult(outcome: .rejectedCookie, dsidUsed: dsidValue)
                 }
-                return ConnectAttemptResult(outcome: .failed(exitCode), dsidUsed: dsidValue)
-            } else if !known, !Self.isProcessAlive(pid: pid, expectedName: "openconnect") {
-                // The helper lost track of this pid (e.g. it was restarted
-                // mid-connection) AND the unprivileged liveness check also
-                // says it's gone — treat as failed rather than guessing at
-                // an exit code we don't have.
-                runtimeState = nil
-                RuntimeState.clear()
-                return ConnectAttemptResult(outcome: .failed(-1), dsidUsed: dsidValue)
+                return ConnectAttemptResult(outcome: .failed(status.exitCode), dsidUsed: dsidValue)
             }
 
             if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
@@ -377,7 +337,7 @@ final class OpenConnectController: ObservableObject {
                 if let post = profile.post, !post.isEmpty {
                     runPostCommand(post)
                 }
-                startStatsTimer(pid: pid)
+                startStatsTimer()
                 return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
             }
             try await Task.sleep(for: .milliseconds(500))
@@ -396,15 +356,15 @@ final class OpenConnectController: ObservableObject {
         stopStatsTimer()
 
         do {
-            try await PrivilegedHelperClient.shared.terminateOpenConnect(pid: state.pid)
-            logStore.append("Sent SIGTERM to openconnect pid: \(state.pid)\n")
+            try await PrivilegedHelperClient.shared.stopSession()
+            logStore.append("Asked the VPN session to stop.\n")
         } catch {
-            logStore.append("Failed to send SIGTERM: \(error)\n")
+            logStore.append("Failed to stop the VPN session: \(error)\n")
         }
 
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            if !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") { break }
+            if !(await sessionIsRunning()) { break }
             try? await Task.sleep(for: .milliseconds(500))
         }
 
@@ -432,13 +392,13 @@ final class OpenConnectController: ObservableObject {
 
         espEstablished = false
         inTransientDrop = false
-        try await PrivilegedHelperClient.shared.requestReconnect(pid: state.pid)
-        logStore.append("Sent SIGUSR2 to openconnect; reconnecting.\n")
+        try await PrivilegedHelperClient.shared.requestReconnect()
+        logStore.append("Asked the VPN session to reconnect.\n")
 
         let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
         while Date() < deadline {
-            if !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") {
-                logStore.append("Reconnect failed: openconnect exited.\n")
+            if !(await sessionIsRunning()) {
+                logStore.append("Reconnect failed: the VPN session ended.\n")
                 // The user asked for a reconnect, not a disconnect — losing
                 // the tunnel here is just as unrequested as below.
                 notifyLost(state: state, reason: "Reconnect failed.")
@@ -464,35 +424,45 @@ final class OpenConnectController: ObservableObject {
 
     // MARK: - Unrequested disconnects
 
-    /// Called from `AppState`'s periodic refresh. Catches openconnect
-    /// exiting on its own — session expiry, `--reconnect-timeout` running
-    /// out, a crash, an outside `kill` — and does the cleanup `disconnect()`
-    /// would have done, plus an optional notification. Every user-requested
-    /// path (`connect`, `disconnect`, `reconnect`, Quit) runs under
-    /// `isBusy` and clears `runtimeState` itself, so it never gets here.
+    /// Called from `AppState`'s periodic refresh. Catches the session ending
+    /// on its own — session expiry, `--reconnect-timeout` running out, a
+    /// helper crash — and does the cleanup `disconnect()` would have done,
+    /// plus an optional notification. Every user-requested path (`connect`,
+    /// `disconnect`, `reconnect`, Quit) runs under `isBusy` and clears
+    /// `runtimeState` itself, so it never gets here.
     func handleUnexpectedExitIfNeeded() async {
+        guard !isBusy, runtimeState != nil else { return }
+        // If the helper can't be reached, say nothing: that's not evidence
+        // the tunnel is gone.
+        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus(),
+              !status.isRunning else { return }
+        // Re-check after the await: a user action may have started meanwhile.
         guard !isBusy, let state = runtimeState else { return }
-        guard !Self.isProcessAlive(pid: state.pid, expectedName: "openconnect") else { return }
         isBusy = true
         defer { isBusy = false }
 
-        let status = try? await PrivilegedHelperClient.shared.processStatus(pid: state.pid)
         let reason: String
-        if let status, status.known, !status.running {
-            logStore.append("openconnect exited unexpectedly (code \(status.exitCode)).\n")
-            reason = status.exitCode == 2
-                ? "The session expired or was rejected by the server."
-                : "openconnect exited with code \(status.exitCode)."
-        } else {
-            logStore.append("openconnect exited unexpectedly.\n")
-            reason = "openconnect exited unexpectedly."
+        switch (status.state, status.exitCode) {
+        case (.exited, -EPERM):
+            logStore.append("The VPN session was rejected by the server.\n")
+            reason = "The session expired or was rejected by the server."
+        case (.exited, -EPIPE):
+            logStore.append("The server ended the VPN session.\n")
+            reason = "The server ended the session."
+        case (.exited, let code):
+            logStore.append("The VPN session ended unexpectedly (code \(code)).\n")
+            reason = "The VPN session ended (code \(code))."
+        case (.none, _), (.running, _):
+            // The helper restarted and lost the session.
+            logStore.append("The VPN session ended unexpectedly.\n")
+            reason = "The VPN session ended unexpectedly."
         }
         notifyLost(state: state, reason: reason)
         await tearDownAfterExit(state: state)
     }
 
-    /// Route/state cleanup after openconnect has already exited on its own
-    /// (no SIGTERM to send).
+    /// Route/state cleanup after the session has already ended on its own
+    /// (nothing left to stop).
     private func tearDownAfterExit(state: RuntimeState) async {
         stopStatsTimer()
         inTransientDrop = false
@@ -519,7 +489,7 @@ final class OpenConnectController: ObservableObject {
     private func transientDropStarted() {
         guard let state = runtimeState, !isBusy, !inTransientDrop else { return }
         inTransientDrop = true
-        logStore.append("Connection dropped; openconnect is reconnecting on its own.\n")
+        logStore.append("Connection dropped; reconnecting on its own.\n")
         guard appSettings.notifyOnTransientDrops else { return }
         Notifier.shared.post(.dropped, title: "VPN connection dropped", body: "\(profileLabel(state)): reconnecting…")
     }
@@ -538,7 +508,7 @@ final class OpenConnectController: ObservableObject {
 
     // MARK: - Stats timer
 
-    private func startStatsTimer(pid: Int32) {
+    private func startStatsTimer() {
         stopStatsTimer()
         statsTimerTask = Task { [weak self] in
             guard let self else { return }
@@ -546,7 +516,7 @@ final class OpenConnectController: ObservableObject {
             // interval — the caller just confirmed (or established) the
             // tunnel, so there's no reason to sit without stats for up to
             // a full poll interval before the first sample appears.
-            try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)
+            try? await PrivilegedHelperClient.shared.requestStatsUpdate()
             while !Task.isCancelled {
                 // Re-read on every iteration (rather than capturing once)
                 // so a change made in Settings while connected takes
@@ -555,7 +525,7 @@ final class OpenConnectController: ObservableObject {
                 try? await Task.sleep(for: .seconds(interval))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
-                try? await PrivilegedHelperClient.shared.requestStatsUpdate(pid: pid)
+                try? await PrivilegedHelperClient.shared.requestStatsUpdate()
             }
         }
     }
@@ -571,73 +541,42 @@ final class OpenConnectController: ObservableObject {
         try? process.run()
     }
 
-    // MARK: - Static helpers
+    // MARK: - Helpers
 
-    /// openconnect built by scripts/build-openconnect.sh and bundled by
-    /// build.sh; nil when running an unbundled debug build.
-    nonisolated static var bundledOpenConnectPath: String? {
-        Bundle.main.url(forAuxiliaryExecutable: "openconnect")?.path
+    /// Asks the helper; an unreachable helper counts as "not running" for the
+    /// callers' wait loops (they have their own deadlines).
+    private func sessionIsRunning() async -> Bool {
+        (try? await PrivilegedHelperClient.shared.sessionStatus())?.isRunning ?? false
     }
 
+    /// Modal prompt to pin a certificate that failed normal validation. The
+    /// fingerprint is the thing to verify out-of-band; "Cancel" is the
+    /// default button.
+    private func confirmTrust(_ failure: CertFailure, hash: String, profile: ConnectionProfile) -> Bool {
+        let changed = profile.pinnedCertHash != nil
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = changed ? "The server certificate has changed" : "Trust this server certificate?"
+        alert.informativeText = """
+            \(profile.name) presented a certificate that isn't trusted:
+
+            \(failure.reason)
+
+            Fingerprint:
+            \(hash)
+
+            \(changed ? "It differs from the certificate you previously trusted. " : "")Only continue if you have verified the fingerprint. Future connections will accept exactly this certificate.
+            """
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Trust and Connect")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    /// Bundled by build.sh; nil when running an unbundled debug build, in
+    /// which case libopenconnect configures no DNS/routes unless the profile
+    /// supplies its own script.
     nonisolated static var bundledVPNCScriptPath: String? {
         Bundle.main.url(forResource: "vpnc-script", withExtension: nil)?.path
-    }
-
-    nonisolated static func findOpenConnectPath() -> String {
-        if let bundled = bundledOpenConnectPath {
-            return bundled
-        }
-        if let inPath = findExecutableInPath("openconnect") {
-            return inPath
-        }
-        for candidate in [
-            "/opt/homebrew/bin/openconnect",
-            "/usr/local/bin/openconnect",
-            "/run/current-system/sw/bin/openconnect",
-        ] {
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return "openconnect"
-    }
-
-    nonisolated private static func findExecutableInPath(_ name: String) -> String? {
-        guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else { return nil }
-        for dir in pathEnv.split(separator: ":") {
-            let candidate = "\(dir)/\(name)"
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    /// True if `pid` exists (`kill(pid, 0)` succeeds, or fails with EPERM
-    /// because it's root-owned) AND its process name matches
-    /// `expectedName` (guards against a reused PID after openconnect
-    /// exits — mirrors `psutil.pid_exists` + name-check in `launcher.py`).
-    /// Entirely unprivileged — doesn't depend on the helper at all.
-    nonisolated static func isProcessAlive(pid: Int32, expectedName: String) -> Bool {
-        guard pid > 0 else { return false }
-        if kill(pid, 0) != 0 && errno == ESRCH {
-            return false
-        }
-        return processName(pid: pid)?.lowercased() == expectedName.lowercased()
-    }
-
-    nonisolated private static func processName(pid: Int32) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-p", String(pid), "-o", "comm="]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        guard (try? process.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !output.isEmpty else { return nil }
-        return (output as NSString).lastPathComponent
     }
 }

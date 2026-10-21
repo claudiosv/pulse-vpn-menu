@@ -26,7 +26,7 @@ for arg in "$@"; do
     esac
 done
 
-echo "==> Building openconnect"
+echo "==> Building libopenconnect"
 ./scripts/build-openconnect.sh
 
 echo "==> swift build -c release"
@@ -42,8 +42,7 @@ echo "==> Copying executables"
 cp ".build/release/${EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 cp ".build/release/${HELPER_EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
 
-echo "==> Bundling openconnect"
-cp vendor/openconnect/bin/openconnect "${APP_BUNDLE}/Contents/MacOS/openconnect"
+echo "==> Bundling vpnc-script"
 cp vendor/openconnect/vpnc-script "${APP_BUNDLE}/Contents/Resources/vpnc-script"
 cp vendor/openconnect/COPYING.LGPL "${APP_BUNDLE}/Contents/Resources/openconnect-COPYING.LGPL"
 
@@ -76,7 +75,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>27.0</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright Claudio Spiess.</string>
 </dict>
@@ -105,12 +104,6 @@ codesign --force --options runtime --timestamp \
     --sign "${SIGN_IDENTITY}" \
     -i "${HELPER_BUNDLE_ID}" \
     "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
-
-echo "==> Codesigning openconnect"
-codesign --force --options runtime --timestamp \
-    --sign "${SIGN_IDENTITY}" \
-    -i "${BUNDLE_ID}.openconnect" \
-    "${APP_BUNDLE}/Contents/MacOS/openconnect"
 
 # Sign the outer app WITHOUT --deep now that the one nested executable is
 # already signed individually — --deep would re-walk and re-sign nested

@@ -20,8 +20,8 @@ enum PrivilegedHelperError: Error, CustomStringConvertible {
 /// Talks to the privileged helper daemon over XPC. Replaces
 /// `PrivilegedRunner`/`SudoersInstaller`/`ShellQuoting` entirely: no more
 /// `sudo`/`osascript`, no shell strings to quote, no `waitForChildPid`
-/// process-tree walking (the helper spawns openconnect itself and reports
-/// its real PID synchronously).
+/// process-tree walking (the VPN session runs inside the helper itself,
+/// via libopenconnect, so there's no child process to track).
 final class PrivilegedHelperClient: @unchecked Sendable {
     static let shared = PrivilegedHelperClient()
 
@@ -163,38 +163,55 @@ final class PrivilegedHelperClient: @unchecked Sendable {
 
     // MARK: - Typed operations (one async wrapper per protocol method)
 
-    func launchOpenConnect(argv: [String], logFile: URL) async throws -> Int32 {
+    func startSession(
+        url: String,
+        cookie: String,
+        vpncScript: String?,
+        pinnedCertHash: String?,
+        logFile: URL
+    ) async throws {
         let helper = try proxy()
-        return try await withCheckedThrowingContinuation { continuation in
-            helper.launchOpenConnect(argv: argv, logPath: logFile.path) { pid, error in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            helper.startSession(
+                url: url,
+                cookie: cookie,
+                vpncScript: vpncScript,
+                pinnedCertHash: pinnedCertHash,
+                logPath: logFile.path
+            ) { error in
                 if let error {
                     continuation.resume(throwing: PrivilegedHelperError.helperError(error))
                 } else {
-                    continuation.resume(returning: pid)
+                    continuation.resume(returning: ())
                 }
             }
         }
     }
 
-    func processStatus(pid: Int32) async throws -> (known: Bool, running: Bool, exitCode: Int32) {
+    func sessionStatus() async throws -> HelperSessionStatus {
         let helper = try proxy()
         return await withCheckedContinuation { continuation in
-            helper.processStatus(pid: pid) { known, running, exitCode in
-                continuation.resume(returning: (known, running, exitCode))
+            helper.sessionStatus { state, exitCode, startedAt, certReason, certHash in
+                continuation.resume(returning: HelperSessionStatus(
+                    state: HelperSessionStatus.State(rawValue: state) ?? .none,
+                    exitCode: exitCode,
+                    startedAt: startedAt > 0 ? Date(timeIntervalSince1970: startedAt) : nil,
+                    certFailure: certReason.map { CertFailure(reason: $0, hash: certHash) }
+                ))
             }
         }
     }
 
-    func terminateOpenConnect(pid: Int32) async throws {
-        try await call(pid: pid) { helper, pid, reply in helper.terminateOpenConnect(pid: pid, reply: reply) }
+    func stopSession() async throws {
+        try await call { helper, reply in helper.stopSession(reply: reply) }
     }
 
-    func requestStatsUpdate(pid: Int32) async throws {
-        try await call(pid: pid) { helper, pid, reply in helper.requestStatsUpdate(pid: pid, reply: reply) }
+    func requestStatsUpdate() async throws {
+        try await call { helper, reply in helper.requestStatsUpdate(reply: reply) }
     }
 
-    func requestReconnect(pid: Int32) async throws {
-        try await call(pid: pid) { helper, pid, reply in helper.requestReconnect(pid: pid, reply: reply) }
+    func requestReconnect() async throws {
+        try await call { helper, reply in helper.requestReconnect(reply: reply) }
     }
 
     func setDefaultRoute(gatewayIP: String) async throws {
@@ -213,16 +230,15 @@ final class PrivilegedHelperClient: @unchecked Sendable {
         try await call(argument: ip) { helper, ip, reply in helper.deleteHostRoute(ip: ip, reply: reply) }
     }
 
-    // MARK: - Shared plumbing for the common "pid in, error out" and
+    // MARK: - Shared plumbing for the common "no arguments, error out" and
     // "String in, error out" method shapes.
 
     private func call(
-        pid: Int32,
-        _ body: (PrivilegedHelperProtocol, Int32, @escaping (NSError?) -> Void) -> Void
+        _ body: (PrivilegedHelperProtocol, @escaping (NSError?) -> Void) -> Void
     ) async throws {
         let helper = try proxy()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            body(helper, pid) { error in
+            body(helper) { error in
                 if let error {
                     continuation.resume(throwing: PrivilegedHelperError.helperError(error))
                 } else {
@@ -247,4 +263,23 @@ final class PrivilegedHelperClient: @unchecked Sendable {
             }
         }
     }
+}
+
+struct CertFailure: Equatable {
+    var reason: String
+    /// `pin-sha256:...`; what to store as the profile's pin to trust it.
+    var hash: String?
+}
+
+struct HelperSessionStatus {
+    enum State: Int32 { case none = 0, running = 1, exited = 2 }
+
+    var state: State
+    /// libopenconnect's result once `exited` (-EINTR after stopSession,
+    /// -EPERM for a rejected cookie, ...).
+    var exitCode: Int32
+    var startedAt: Date?
+    var certFailure: CertFailure?
+
+    var isRunning: Bool { state == .running }
 }

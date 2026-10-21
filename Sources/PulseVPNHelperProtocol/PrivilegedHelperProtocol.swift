@@ -27,9 +27,14 @@ public enum PrivilegedHelperConstants {
 }
 
 /// Narrowly-typed root operations only — no generic "run this argv as
-/// root" passthrough, and no signal number ever crosses this boundary
-/// (three dedicated signal methods instead), so a compromised/buggy client
-/// can't ask the helper to do anything beyond exactly these operations.
+/// root" passthrough, so a compromised/buggy client can't ask the helper to
+/// do anything beyond exactly these operations.
+///
+/// The VPN session itself runs inside the helper process (libopenconnect,
+/// see `OpenConnectKit`) — there is at most one at a time, so there is no
+/// session handle to pass around. It survives the app quitting or crashing,
+/// just as the old openconnect subprocess did; a relaunched app finds it
+/// again through `sessionStatus`.
 ///
 /// Every parameter/reply type here is ObjC-bridgeable (String, [String],
 /// Int32, Bool, NSError) — no NSSecureCoding-conforming class needed.
@@ -37,25 +42,40 @@ public enum PrivilegedHelperConstants {
 /// bare `Error` is not a legal type inside an `@objc protocol` and would
 /// fail to compile.
 @objc public protocol PrivilegedHelperProtocol {
-    /// Spawns openconnect directly as root (the helper already runs as
-    /// root via launchd — no sudo, no shell involved at all). `argv[0]` is
-    /// the resolved openconnect path, `argv[1...]` its arguments. Redirects
-    /// stdout+stderr to `logPath`. Replies with the REAL pid synchronously:
-    /// `Process.processIdentifier` from the helper's own spawn, since
-    /// there's no intermediate `sudo` to fork through anymore (unlike the
-    /// sudoers-based design this replaces, which had to walk `ps`'s process
-    /// tree to find openconnect's real pid underneath `sudo`'s).
-    func launchOpenConnect(argv: [String], logPath: String, reply: @escaping (Int32, NSError?) -> Void)
+    /// Starts the session on a helper thread and returns as soon as it is
+    /// running (errors only if one is already running or the log file can't
+    /// be opened). Progress is reported through `logPath` (timestamped
+    /// lines) and `sessionStatus`.
+    ///
+    /// - `vpncScript`: passed to libopenconnect, which runs it as `sh -c`,
+    ///   e.g. "vpn-slice 10.0.0.0/8".
+    /// - `pinnedCertHash`: a `pin-sha256:...` fingerprint; a server
+    ///   certificate that fails normal validation is accepted iff it matches.
+    func startSession(
+        url: String,
+        cookie: String,
+        vpncScript: String?,
+        pinnedCertHash: String?,
+        logPath: String,
+        reply: @escaping (NSError?) -> Void
+    )
 
-    /// 3-state, not 2: `known` distinguishes "this helper instance spawned
-    /// and is still tracking this pid" from "helper doesn't recognize this
-    /// pid" (e.g. after a helper crash/relaunch mid-connection).
-    /// `running`/`exitCode` are only meaningful when `known == true`.
-    func processStatus(pid: Int32, reply: @escaping (_ known: Bool, _ running: Bool, _ exitCode: Int32) -> Void)
+    /// `state`: 0 = no session since the helper started, 1 = running,
+    /// 2 = exited (`exitCode` is libopenconnect's result: -EINTR (-4) after
+    /// stopSession, -EPERM (-1) for a rejected cookie, ...). The cert fields
+    /// are set when the session ended because the server certificate was
+    /// rejected; `certHash` is what the user would pin to trust it.
+    func sessionStatus(reply: @escaping (
+        _ state: Int32,
+        _ exitCode: Int32,
+        _ startedAt: Double,
+        _ certFailureReason: String?,
+        _ certHash: String?
+    ) -> Void)
 
-    func terminateOpenConnect(pid: Int32, reply: @escaping (NSError?) -> Void)   // SIGTERM
-    func requestStatsUpdate(pid: Int32, reply: @escaping (NSError?) -> Void)     // SIGUSR1
-    func requestReconnect(pid: Int32, reply: @escaping (NSError?) -> Void)       // SIGUSR2
+    func stopSession(reply: @escaping (NSError?) -> Void)             // ~ SIGTERM
+    func requestStatsUpdate(reply: @escaping (NSError?) -> Void)      // ~ SIGUSR1
+    func requestReconnect(reply: @escaping (NSError?) -> Void)        // ~ SIGUSR2
 
     func setDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void)     // route change default <ip>
     func addDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void)     // route add default <ip>

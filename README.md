@@ -5,14 +5,16 @@ VPN via `openconnect`. Reimplements the behavior of
 [openconnect-pulse-launcher](https://github.com/) (the Python/`rumps`
 version of this app) as a SwiftUI `MenuBarExtra` app: it drives a real
 Chrome window over the Chrome DevTools Protocol to capture the `DSID`
-session cookie, then launches `openconnect --protocol=pulse` as root via the
-native macOS administrator-privileges dialog.
+session cookie, then runs the VPN session as root inside a privileged helper
+(libopenconnect, `--protocol=pulse`, linked in statically — no `openconnect`
+binary or Homebrew install needed at runtime). A server certificate that fails
+validation prompts once to pin its fingerprint for that connection.
 
 ## Requirements
 
-- macOS 14 (Sonoma) or later.
-- Build-time only: `brew install autoconf automake libtool`. OpenSSL and openconnect are built from
-  upstream `master` by `scripts/build-openconnect.sh` and bundled in the app; pin with
+- macOS 27 or later.
+- Build-time only: `brew install autoconf automake libtool`. OpenSSL and libopenconnect are built from
+  upstream `master` by `scripts/build-openconnect.sh` and linked into the helper; pin with
   `OC_REF=v9.21` (tag, branch or sha), and `OC_ARCHS="arm64 x86_64"` for a universal build.
 - Google Chrome or Chromium installed (used to capture the DSID login
   cookie; a real, visible browser window is used so you can log in with

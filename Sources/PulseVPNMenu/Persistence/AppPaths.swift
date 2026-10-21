@@ -31,23 +31,12 @@ enum AppPaths {
     /// app relaunches as a running diagnostic history.
     static let appLogFile = logsDir.appendingPathComponent("app.log")
 
-    /// Fixed, stable path: always holds the most recently launched
-    /// openconnect's real PID. The unprivileged app itself writes this
-    /// immediately after the privileged helper hands back the real PID
-    /// (the helper spawns openconnect directly and reports its PID
-    /// synchronously — no more sudo-forking workaround needed to discover
-    /// it). This is what lets a relaunched app reattach to an
-    /// already-running tunnel after a crash (see
-    /// `OpenConnectController.recoverStateFromPidFile`), entirely
-    /// unprivileged.
-    static let openconnectPidFile = logsDir.appendingPathComponent("openconnect.pid")
-
     /// Ensures the log file exists (world-writable, since the privileged
     /// helper's `FileHandle(forWritingAtPath:)` requires it to already
-    /// exist) and the pid file exists, before a new connection attempt.
+    /// exist) before a new connection attempt.
     static func prepareForNewConnection() throws {
         try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-        for file in [currentLogFile, openconnectPidFile] {
+        for file in [currentLogFile] {
             FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o666])
         }
     }

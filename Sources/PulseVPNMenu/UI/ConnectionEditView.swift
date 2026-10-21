@@ -13,6 +13,7 @@ struct ConnectionEditView: View {
 
     private let profileID: UUID
     private let existingDSID: String?
+    @State private var pinnedCertHash: String?
     private let onSave: (ConnectionProfile) -> Void
     /// Captured once from the profile this sheet was opened with, so the
     /// title doesn't flip from "Add" to "Edit" as soon as a name is typed.
@@ -27,6 +28,7 @@ struct ConnectionEditView: View {
     init(profile: ConnectionProfile, onSave: @escaping (ConnectionProfile) -> Void) {
         self.profileID = profile.id
         self.existingDSID = profile.lastDSID
+        self._pinnedCertHash = State(initialValue: profile.pinnedCertHash)
         self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
         self._vpnURL = State(initialValue: profile.vpnURL)
@@ -63,6 +65,18 @@ struct ConnectionEditView: View {
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Don't replace the default route", isOn: $noDefaultRoute)
                     Toggle("Verbose openconnect logging", isOn: $debug)
+                    if let pinnedCertHash {
+                        LabeledContent("Trusted certificate") {
+                            HStack {
+                                Text(pinnedCertHash)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .textSelection(.enabled)
+                                Button("Forget") { self.pinnedCertHash = nil }
+                            }
+                        }
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -83,7 +97,8 @@ struct ConnectionEditView: View {
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,
-                            lastDSID: existingDSID
+                            lastDSID: existingDSID,
+                            pinnedCertHash: pinnedCertHash
                         )
                     )
                     dismiss()
@@ -95,7 +110,7 @@ struct ConnectionEditView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 520, height: 460)
         .background(.ultraThinMaterial)
     }
 }

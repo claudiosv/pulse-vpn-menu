@@ -9,8 +9,8 @@
 #
 # The result links OpenSSL statically and otherwise only uses system libs
 # (libz, libxml2, libSystem), so it runs on any Mac without Homebrew.
-# OpenSSL is built from a pinned tarball too (Homebrew's archives target the
-# newest macOS, not our 14.0 floor).
+# OpenSSL is built from a pinned tarball too (pinned version, and a CA path
+# that matches macOS: /etc/ssl/cert.pem).
 # Build-time deps: `brew install autoconf automake libtool`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -41,7 +41,7 @@ fi
 SHA="$(git -C "$REPO" rev-parse --verify -q "origin/${OC_REF}^{commit}" \
     || git -C "$REPO" rev-parse --verify -q "${OC_REF}^{commit}")" \
     || { echo "unknown openconnect ref: ${OC_REF}" >&2; exit 1; }
-STAMP="$SHA openssl-$OPENSSL_VERSION+etcssl $ARCHS"
+STAMP="$SHA openssl-$OPENSSL_VERSION+etcssl+macos27 $ARCHS"
 
 if [[ -x "$OUT/bin/openconnect" && -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
     echo "==> openconnect ${OC_REF} (${SHA:0:10}) already built"
@@ -81,7 +81,7 @@ for arch in $ARCHS; do
         cd "$SSL-src"
         case "$arch" in arm64) target=darwin64-arm64-cc ;; x86_64) target=darwin64-x86_64-cc ;; esac
         ./Configure "$target" no-shared no-tests no-apps no-docs no-module \
-            --prefix="$SSL" --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=14.0 -isysroot "$SDK" >build.log 2>&1 \
+            --prefix="$SSL" --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0 -isysroot "$SDK" >build.log 2>&1 \
             && make -j"$(sysctl -n hw.ncpu)" build_libs >>build.log 2>&1 \
             && make install_dev >>build.log 2>&1 \
             || { tail -30 build.log >&2; exit 1; }
@@ -89,7 +89,7 @@ for arch in $ARCHS; do
     rm -rf "$SSL-src"
     (
         cd "$SRC"
-        export CFLAGS="-arch $arch -O2 -mmacosx-version-min=14.0 -isysroot $SDK"
+        export CFLAGS="-arch $arch -O2 -mmacosx-version-min=27.0 -isysroot $SDK"
         export LDFLAGS="-arch $arch"
         # Hide Homebrew's .pc files so optional deps (p11-kit, ...) aren't
         # picked up; everything we want is passed explicitly below.

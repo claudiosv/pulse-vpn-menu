@@ -3,12 +3,12 @@ import OpenConnectKit
 
 // Manual probe for the in-process libopenconnect path. Needs root to bring
 // up the tunnel:
-//   sudo .build/release/OCShimProbe <vpn-url> <cookie> [vpnc-script]
+//   sudo .build/release/OCShimProbe <vpn-url> <cookie> [vpnc-script] [pin-sha256:...]
 // Ctrl-C cancels (clean teardown); stats are requested every 5 s.
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-    FileHandle.standardError.write(Data("usage: OCShimProbe <vpn-url> <cookie> [vpnc-script]\n".utf8))
+    FileHandle.standardError.write(Data("usage: OCShimProbe <vpn-url> <cookie> [vpnc-script] [pin-sha256:...]\n".utf8))
     exit(64)
 }
 
@@ -18,12 +18,12 @@ guard args.count >= 3 else {
 
 let oc = EmbeddedOpenConnect(handlers: OpenConnectHandlers(
     log: { level, line in out("[log \(level)] " + line.trimmingCharacters(in: .newlines)) },
-    stats: { s in out("[stats] tx \(s.txPackets) pkts/\(s.txBytes) B  rx \(s.rxPackets) pkts/\(s.rxBytes) B") },
-    connected: { t in out("[connected] \(t.address ?? "?")/\(t.netmask ?? "?") gw \(t.gateway ?? "?") mtu \(t.mtu)") }
+    connected: { t in out("[connected] \(t.address ?? "?")/\(t.netmask ?? "?") gw \(t.gateway ?? "?") mtu \(t.mtu)") },
+    certRejected: { reason, hash in out("[cert rejected] \(reason) \(hash ?? "")") }
 ))
 
 let done = DispatchSemaphore(value: 0)
-oc.start(url: args[1], cookie: args[2], vpncScript: args.count > 3 ? args[3] : nil) { rc in
+oc.start(url: args[1], cookie: args[2], vpncScript: args.count > 3 ? args[3] : nil, pinnedCert: args.count > 4 ? args[4] : nil) { rc in
     out("[exit] \(rc)")
     done.signal()
 }

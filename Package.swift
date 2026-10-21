@@ -7,7 +7,7 @@ let oc = "\(Context.packageDirectory)/vendor/openconnect"
 let package = Package(
     name: "PulseVPNMenu",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v27)
     ],
     targets: [
         .target(
@@ -45,7 +45,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "PulseVPNMenuHelper",
-            dependencies: ["PulseVPNHelperProtocol"],
+            dependencies: ["PulseVPNHelperProtocol", "OpenConnectKit"],
             path: "Sources/PulseVPNMenuHelper"
         )
     ]

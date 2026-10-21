@@ -62,6 +62,12 @@ final class ConnectionStore: ObservableObject {
         save()
     }
 
+    func updatePinnedCertHash(profileID: UUID, hash: String?) {
+        guard let index = profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        profiles[index].pinnedCertHash = hash
+        save()
+    }
+
     private func load() {
         guard let data = try? Data(contentsOf: AppPaths.connectionsFile) else { return }
         guard let document = try? JSONDecoder().decode(Document.self, from: data) else { return }

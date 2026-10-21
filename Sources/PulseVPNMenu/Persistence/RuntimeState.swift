@@ -1,11 +1,10 @@
 import Foundation
 
-/// Persisted record of the currently-running openconnect process (if any),
-/// so relaunching the app can rediscover a live tunnel and still offer
+/// Persisted record of the currently-running VPN session (if any), so
+/// relaunching the app can rediscover a live tunnel and still offer
 /// Disconnect/Reconnect instead of losing track of it.
 struct RuntimeState: Codable, Equatable {
-    var pid: Int32
-    /// nil when the state was reconstructed purely from the PID file (e.g.
+    /// nil when the state was reconstructed from the helper alone (e.g.
     /// after the app crashed/was killed and relaunched) without the full
     /// context a normal `connectOnce()` attempt has.
     var profileID: UUID?

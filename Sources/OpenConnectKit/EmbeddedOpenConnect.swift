@@ -1,13 +1,6 @@
 import COpenConnectShim
 import Foundation
 
-public struct OpenConnectStats: Sendable {
-    public var txPackets: UInt64
-    public var txBytes: UInt64
-    public var rxPackets: UInt64
-    public var rxBytes: UInt64
-}
-
 public struct OpenConnectTunnel: Sendable {
     public var address: String?
     public var netmask: String?
@@ -16,18 +9,22 @@ public struct OpenConnectTunnel: Sendable {
 }
 
 public struct OpenConnectHandlers: Sendable {
+    /// One line of libopenconnect output, including the periodic status lines
+    /// (`Configured as ...`, `RX: ... TX: ...`) produced by `requestStats()`.
     public var log: @Sendable (_ level: Int, _ line: String) -> Void
-    public var stats: @Sendable (OpenConnectStats) -> Void
     public var connected: @Sendable (OpenConnectTunnel) -> Void
+    /// Certificate failed validation and didn't match the pin; `hash` is the
+    /// `pin-sha256:...` value to pass as `pinnedCert` to trust it.
+    public var certRejected: @Sendable (_ reason: String, _ hash: String?) -> Void
 
     public init(
         log: @escaping @Sendable (Int, String) -> Void = { _, _ in },
-        stats: @escaping @Sendable (OpenConnectStats) -> Void = { _ in },
-        connected: @escaping @Sendable (OpenConnectTunnel) -> Void = { _ in }
+        connected: @escaping @Sendable (OpenConnectTunnel) -> Void = { _ in },
+        certRejected: @escaping @Sendable (String, String?) -> Void = { _, _ in }
     ) {
         self.log = log
-        self.stats = stats
         self.connected = connected
+        self.certRejected = certRejected
     }
 }
 
@@ -36,7 +33,8 @@ public struct OpenConnectHandlers: Sendable {
 /// Callbacks fire on the session thread.
 public final class EmbeddedOpenConnect: @unchecked Sendable {
     private let handlers: OpenConnectHandlers
-    private var session: OpaquePointer?
+    private let lock = NSLock()
+    private var session: OpaquePointer?   // guarded by `lock`
     private var thread: Thread?
 
     public init(handlers: OpenConnectHandlers) {
@@ -49,6 +47,7 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
         url: String,
         cookie: String,
         vpncScript: String?,
+        pinnedCert: String? = nil,
         reconnectTimeout: Int32 = 30,
         dpdSeconds: Int32 = 5,
         onExit: @escaping @Sendable (Int32) -> Void
@@ -58,10 +57,6 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
                 me.handlers.log(Int(level), String(cString: msg!))
             },
-            stats: { ctx, txP, txB, rxP, rxB in
-                let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
-                me.handlers.stats(OpenConnectStats(txPackets: txP, txBytes: txB, rxPackets: rxP, rxBytes: rxB))
-            },
             connected: { ctx, addr, mask, gw, mtu in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
                 me.handlers.connected(OpenConnectTunnel(
@@ -69,6 +64,10 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
                     netmask: mask.map { String(cString: $0) },
                     gateway: gw.map { String(cString: $0) },
                     mtu: Int(mtu)))
+            },
+            cert_rejected: { ctx, reason, hash in
+                let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
+                me.handlers.certRejected(String(cString: reason!), hash.map { String(cString: $0) })
             })
 
         // The session thread holds a strong ref to self, so the callback
@@ -78,12 +77,14 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
             onExit(-ENOMEM)
             return
         }
-        self.session = created
+        lock.withLock { self.session = created }
         nonisolated(unsafe) let session = created
 
         let thread = Thread { [self] in
-            let rc = ocshim_run(session, url, cookie, vpncScript, reconnectTimeout, dpdSeconds)
-            self.session = nil
+            let rc = ocshim_run(session, url, cookie, vpncScript, pinnedCert,
+                                reconnectTimeout, dpdSeconds)
+            // Taking the lock waits out any in-flight cancel()/requestStats().
+            self.lock.withLock { self.session = nil }
             ocshim_free(session)
             onExit(rc)
         }
@@ -92,9 +93,11 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
         thread.start()
     }
 
-    // ponytail: no lock around `session`; a call racing session teardown can
-    // touch freed memory. Guard with a mutex when this leaves prototype stage.
-    public func cancel() { session.map(ocshim_cancel) }
-    public func requestStats() { session.map(ocshim_request_stats) }
-    public func requestReconnect() { session.map(ocshim_request_reconnect) }
+    public func cancel() { withSession(ocshim_cancel) }
+    public func requestStats() { withSession(ocshim_request_stats) }
+    public func requestReconnect() { withSession(ocshim_request_reconnect) }
+
+    private func withSession(_ body: (OpaquePointer) -> Void) {
+        lock.withLock { if let session { body(session) } }
+    }
 }
