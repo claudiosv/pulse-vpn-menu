@@ -1,0 +1,37 @@
+Sources/OCShimProbe/main.swift
+  s_3ad1adb7c5b684::t_82ebfaed58bd85 1-14,16-45
+  s_3ad1adb7c5b684::t_e81627a132ff9a 15
+Sources/COpenConnectShim/ocshim.c
+  s_3ad1adb7c5b684::t_4fe5c7c05ad626 1-169
+Sources/OpenConnectKit/EmbeddedOpenConnect.swift
+  s_3ad1adb7c5b684::t_574419fff3c288 1-76,78-80,83-100
+  s_3ad1adb7c5b684::t_dd3aa9c1d73ee4 77,81-82
+Sources/COpenConnectShim/include/ocshim.h
+  s_3ad1adb7c5b684::t_82afd844483185 1-42
+scripts/build-openconnect.sh
+  s_3ad1adb7c5b684::t_501b5e2973159f 84
+  s_3ad1adb7c5b684::t_fba4d714a28af6 46,65,123-127,132
+  s_3ad1adb7c5b684::t_fc78381e74e90b 12-14,25-28,57-61,74-83,85-89,108,128-131
+  s_3ad1adb7c5b684::t_3e602e3fd42d65 44
+  s_3ad1adb7c5b684::t_0beeed96c8476a 62
+Package.swift
+  s_3ad1adb7c5b684::t_a9f5e7a230bb43 4-6,25-45
+README.md
+  s_3ad1adb7c5b684::t_6d254f770e11b3 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a8ea78f40efb1f2a13088a0339774dbb143864d",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
