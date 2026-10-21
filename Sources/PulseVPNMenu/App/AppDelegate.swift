@@ -44,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.mainMenu = buildMainMenu()
         Notifier.shared.install()
         let settings = appState.appSettings
         if settings.notifyOnUnexpectedDisconnect || settings.notifyOnTransientDrops {
@@ -67,6 +68,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - Menu construction
+
+    /// The app menu bar (shown while the main window is up and the app has
+    /// a Dock icon). Without it the standard text-editing shortcuts have
+    /// nothing to dispatch through — AppKit routes ⌘C/⌘V/⌘X/⌘A/⌘Z via
+    /// `NSMenuItem` key equivalents sent down the responder chain, and an
+    /// app that drives `NSApplication` directly starts with no main menu at
+    /// all. Items have a nil target so they reach the focused text field.
+    private func buildMainMenu() -> NSMenu {
+        let mainMenu = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        let quit = actionItem(title: "Quit Pulse VPN Menu") { [weak self] in self?.quit() }
+        quit.keyEquivalent = "q"
+        appMenu.addItem(quit)
+        appItem.submenu = appMenu
+        mainMenu.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        mainMenu.addItem(editItem)
+
+        let windowItem = NSMenuItem()
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowItem.submenu = window
+        mainMenu.addItem(windowItem)
+
+        return mainMenu
+    }
 
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
