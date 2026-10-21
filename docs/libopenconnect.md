@@ -127,3 +127,25 @@ libopenconnect version.
   no sample arrives; a concurrent `stopSession` waits for it.
 - **Still text-based, elsewhere:** `RouteManager` reads `dscacheutil` output
   to find a stale hostname route.
+
+## Follow-ups
+
+### Clear cached cookie option
+
+Not implemented. `ConnectionProfile.lastDSID` caches the login cookie, but
+almost every connect starts with `The server rejected the DSID cookie;
+re-authenticating.` (35 of 42 connects in one log). libopenconnect's cancel
+command (`OC_CMD_CANCEL`, sent by Disconnect) logs the session off on the
+server, which invalidates the cookie we just saved. The cached cookie is only
+useful after a crash or an app relaunch while the session is still up. Each
+stale attempt costs a failed handshake and a confusing log line.
+
+To add:
+
+- **Automatic:** clear `lastDSID` after a user-requested Disconnect, so the
+  next connect goes straight to browser login. Keep it across reattach and
+  unexpected exits, where the session may still be valid.
+- **Manual:** a "Clear saved login" button in the connection editor (next to
+  the pinned-certificate "Forget" button) and/or a menu item, via
+  `ConnectionStore.updateDSID(profileID:dsid: nil)`, for forcing a fresh
+  login when a cookie is stuck.
