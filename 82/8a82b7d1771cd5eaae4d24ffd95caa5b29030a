@@ -1,0 +1,31 @@
+build.sh
+  s_3ad1adb7c5b684::t_8c530336874c2d 29-31,45-49,109-113
+  s_3ad1adb7c5b684::t_8b4c4dba797962 114
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_3ad1adb7c5b684::t_8c530336874c2d 314-315,576-585,587-589
+scripts/build-openconnect.sh
+  s_3ad1adb7c5b684::t_f36d7e04fa92b5 56-57
+  s_3ad1adb7c5b684::t_046ee514dfe072 46-47,53-55,63,66
+  s_3ad1adb7c5b684::t_58373fb52f2e76 1-45,48-52,58-62,65,67-87
+  s_3ad1adb7c5b684::t_e3a181dce2e02e 64
+README.md
+  s_3ad1adb7c5b684::t_8c530336874c2d 14-16
+.gitignore
+  s_3ad1adb7c5b684::t_7d8aca515cf417 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "828a82b7d1771cd5eaae4d24ffd95caa5b29030a",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
