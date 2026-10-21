@@ -1,0 +1,38 @@
+scripts/check-updates.sh
+  s_3ad1adb7c5b684::t_450440fd701eb4 120-123
+  s_3ad1adb7c5b684::t_573731cc235142 1-33,38-119,124-135
+  s_3ad1adb7c5b684::t_80637132d9ea28 34-37
+.gitmodules
+  s_3ad1adb7c5b684::t_284604e26522b6 4
+  s_3ad1adb7c5b684::t_2af8fedfb66ed4 1-3,5-10
+scripts/build-openconnect.sh
+  s_3ad1adb7c5b684::t_450440fd701eb4 36-42
+  s_3ad1adb7c5b684::t_a98e6b16d9a0a5 2-4,6-17,21-24,28-30,44-47,49-58,60-62,67,70-72,74-75,77,79,85-94,138
+docs/libopenconnect.md
+  s_3ad1adb7c5b684::t_fb291a2af38c04 28-30,90,98-128
+  s_3ad1adb7c5b684::t_d188b2899f0936 129
+README.md
+  s_3ad1adb7c5b684::t_fb291a2af38c04 16-21
+third_party/openconnect
+  s_3ad1adb7c5b684::t_52199c1fa06ba4 1
+third_party/openssl
+  s_3ad1adb7c5b684::t_45389583afdfaa 1
+third_party/vpnc-scripts
+  s_3ad1adb7c5b684::t_3d2e4fc95c485f 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3334267c31c09cd4ed25fdc54f025723b866192",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
