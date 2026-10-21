@@ -1,0 +1,24 @@
+scripts/check-updates.sh
+  s_3ad1adb7c5b684::t_f0da2748ba93e1 125-127
+  s_3ad1adb7c5b684::t_56b094316c12f8 42,44-45,70,73-74,76-77,110-111,131-132
+scripts/build-openconnect.sh
+  s_3ad1adb7c5b684::t_f0da2748ba93e1 41-46
+docs/libopenconnect.md
+  s_3ad1adb7c5b684::t_f0da2748ba93e1 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a09123c025f8680b0b01bbc3d0fa64cbe1b01f3e",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
