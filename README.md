@@ -11,8 +11,9 @@ native macOS administrator-privileges dialog.
 ## Requirements
 
 - macOS 14 (Sonoma) or later.
-- [`openconnect`](https://www.infradead.org/openconnect/) installed (e.g.
-  `brew install openconnect`).
+- Build-time only: `brew install openssl@3` (openconnect is built from a
+  pinned source tarball by `scripts/build-openconnect.sh` and bundled in the
+  app; set `OC_ARCHS="arm64 x86_64"` for a universal build).
 - Google Chrome or Chromium installed (used to capture the DSID login
   cookie; a real, visible browser window is used so you can log in with
   your SSO/2FA flow, including any browser extensions like a password

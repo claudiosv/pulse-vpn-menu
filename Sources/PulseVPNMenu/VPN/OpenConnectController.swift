@@ -311,6 +311,8 @@ final class OpenConnectController: ObservableObject {
         var argv = [openconnectPath]
         if let script = profile.script, !script.isEmpty {
             argv.append(contentsOf: ["-s", script])
+        } else if let script = Self.bundledVPNCScriptPath {
+            argv.append(contentsOf: ["-s", script])
         }
         argv.append(contentsOf: [
             "--reconnect-timeout", "30",
@@ -571,7 +573,20 @@ final class OpenConnectController: ObservableObject {
 
     // MARK: - Static helpers
 
+    /// openconnect built by scripts/build-openconnect.sh and bundled by
+    /// build.sh; nil when running an unbundled debug build.
+    nonisolated static var bundledOpenConnectPath: String? {
+        Bundle.main.url(forAuxiliaryExecutable: "openconnect")?.path
+    }
+
+    nonisolated static var bundledVPNCScriptPath: String? {
+        Bundle.main.url(forResource: "vpnc-script", withExtension: nil)?.path
+    }
+
     nonisolated static func findOpenConnectPath() -> String {
+        if let bundled = bundledOpenConnectPath {
+            return bundled
+        }
         if let inPath = findExecutableInPath("openconnect") {
             return inPath
         }
