@@ -1,0 +1,19 @@
+Sources/COpenConnectShim/ocshim.c
+  s_3ad1adb7c5b684::t_297a909e273179 221-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b61c09b02def0b74e36ead2f2a1bb509a28b8c67",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
