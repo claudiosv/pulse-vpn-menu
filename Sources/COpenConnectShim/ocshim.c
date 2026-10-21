@@ -218,6 +218,22 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
     } while (ret == 0);
 
 out:
+    /* Same wording as the messages openconnect's main() prints on exit. */
+    switch (ret) {
+    case -EPERM:
+        emit(s, PRG_ERR, "Cookie was rejected by server; exiting.\n");
+        break;
+    case -EPIPE:
+        emit(s, PRG_ERR, "Session terminated by server; exiting.\n");
+        break;
+    case -EINTR:
+        emit(s, PRG_INFO, "User cancelled; exiting.\n");
+        break;
+    default:
+        emitf(s, PRG_ERR, "Session ended with error %d (%s); exiting.\n", ret, strerror(-ret));
+        break;
+    }
+
     /* After this, no command write can touch the fd vpninfo_free() closes. */
     pthread_mutex_lock(&s->cmd_lock);
     s->cmd_fd = -1;
