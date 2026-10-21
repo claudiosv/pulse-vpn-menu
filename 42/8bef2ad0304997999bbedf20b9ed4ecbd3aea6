@@ -1,0 +1,33 @@
+Sources/PulseVPNMenu/UI/LogsView.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 3
+README.md
+  s_3ad1adb7c5b684::t_e90edaee329b9d 48,56-58,60,71-73
+Sources/PulseVPNMenu/Persistence/AppSettings.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 15
+Sources/PulseVPNMenu/App/AppState.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 32-33,59,98
+Sources/PulseVPNMenu/UI/StatusView.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 7-8
+Sources/PulseVPNMenu/UI/ConnectionEditView.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 64
+Sources/PulseVPNMenu/UI/StatsGraphView.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 20
+Sources/PulseVPNMenu/UI/GeneralView.swift
+  s_3ad1adb7c5b684::t_e90edaee329b9d 26,50,62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "428bef2ad0304997999bbedf20b9ed4ecbd3aea6",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
