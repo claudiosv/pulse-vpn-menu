@@ -95,6 +95,7 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
         pinnedCert: String? = nil,
         reconnectTimeout: Int32 = 30,
         dpdSeconds: Int32 = 5,
+        verbose: Bool = false,
         onExit: @escaping @Sendable (Int32) -> Void
     ) {
         var callbacks = ocshim_callbacks(
@@ -127,7 +128,7 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
 
         let thread = Thread { [self] in
             let rc = ocshim_run(session, url, cookie, vpncScript, pinnedCert,
-                                reconnectTimeout, dpdSeconds)
+                                reconnectTimeout, dpdSeconds, verbose ? 1 : 0)
             // Taking the lock waits out any in-flight cancel()/requestStats().
             self.lock.withLock { self.session = nil }
             ocshim_free(session)

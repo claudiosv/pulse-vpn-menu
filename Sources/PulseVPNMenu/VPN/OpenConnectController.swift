@@ -285,6 +285,7 @@ final class OpenConnectController: ObservableObject {
             cookie: dsidValue,
             vpncScript: script,
             pinnedCertHash: profile.pinnedCertHash,
+            verbose: profile.debug,
             logFile: AppPaths.currentLogFile
         )
 

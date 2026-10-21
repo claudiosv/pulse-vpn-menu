@@ -51,11 +51,13 @@ public enum PrivilegedHelperConstants {
     ///   e.g. "vpn-slice 10.0.0.0/8".
     /// - `pinnedCertHash`: a `pin-sha256:...` fingerprint; a server
     ///   certificate that fails normal validation is accepted iff it matches.
+    /// - `verbose`: libopenconnect debug-level logging.
     func startSession(
         url: String,
         cookie: String,
         vpncScript: String?,
         pinnedCertHash: String?,
+        verbose: Bool,
         logPath: String,
         reply: @escaping (NSError?) -> Void
     )

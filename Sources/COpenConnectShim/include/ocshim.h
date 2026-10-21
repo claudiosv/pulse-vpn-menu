@@ -47,14 +47,15 @@ typedef struct {
 
 ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx);
 
-/* Blocks until the session ends. Returns libopenconnect's result:
+/* Blocks until the session ends. `verbose` raises libopenconnect's log level
+ * from info to debug. Returns libopenconnect's result:
  * -EINTR user cancel, -EPERM cookie rejected, -EPIPE server ended session,
  * other negative errno for connection/tunnel setup failures.
  * `pinned_cert` (may be NULL) is a "pin-sha256:..." hash; a certificate that
  * fails normal validation is accepted iff it matches. */
 int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
                const char *vpnc_script, const char *pinned_cert,
-               int reconnect_timeout, int dpd_seconds);
+               int reconnect_timeout, int dpd_seconds, int verbose);
 
 void ocshim_cancel(ocshim_t *s);             /* ~ SIGTERM */
 void ocshim_request_reconnect(ocshim_t *s);  /* ~ SIGUSR2; clears esp_established */

@@ -64,7 +64,7 @@ struct ConnectionEditView: View {
                     TextField("vpnc script", text: $script, prompt: Text("vpn-slice …"))
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Don't replace the default route", isOn: $noDefaultRoute)
-                    Toggle("Verbose openconnect logging", isOn: $debug)
+                    Toggle("Verbose logging", isOn: $debug)
                     if let pinnedCertHash {
                         LabeledContent("Trusted certificate") {
                             HStack {

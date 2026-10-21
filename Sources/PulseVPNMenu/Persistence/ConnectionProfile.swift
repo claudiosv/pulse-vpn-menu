@@ -11,6 +11,7 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     /// Command to run once the tunnel is up.
     var post: String?
     var noDefaultRoute: Bool
+    /// Debug-level libopenconnect logging for this connection's session.
     var debug: Bool
     /// Cached DSID cookie so re-connecting doesn't always require a fresh
     /// browser login. Cleared whenever openconnect rejects it (-EPERM).

@@ -59,6 +59,7 @@ final class VPNSession: @unchecked Sendable {
         cookie: String,
         vpncScript: String?,
         pinnedCertHash: String?,
+        verbose: Bool,
         logPath: String
     ) throws {
         let (session, queue, writer, logFile): (EmbeddedOpenConnect, DispatchQueue, TimestampingLogWriter, CappedLogFile) = try lock.withLock {
@@ -101,7 +102,8 @@ final class VPNSession: @unchecked Sendable {
             url: url,
             cookie: cookie,
             vpncScript: vpncScript,
-            pinnedCert: pinnedCertHash
+            pinnedCert: pinnedCertHash,
+            verbose: verbose
         ) { [weak self] rc in
             queue.async {
                 writer.flush()

@@ -3,7 +3,7 @@ import OpenConnectKit
 
 // Manual probe for the in-process libopenconnect path. Needs root to bring
 // up the tunnel:
-//   sudo .build/release/OCShimProbe <vpn-url> <cookie> [vpnc-script] [pin-sha256:...]
+//   sudo .build/release/OCShimProbe <vpn-url> <cookie> [vpnc-script] [pin-sha256:...] [-v]
 // Ctrl-C cancels (clean teardown); stats are polled every 5 s.
 
 let args = CommandLine.arguments
@@ -23,7 +23,7 @@ let oc = EmbeddedOpenConnect(handlers: OpenConnectHandlers(
 ))
 
 let done = DispatchSemaphore(value: 0)
-oc.start(url: args[1], cookie: args[2], vpncScript: args.count > 3 ? args[3] : nil, pinnedCert: args.count > 4 ? args[4] : nil) { rc in
+oc.start(url: args[1], cookie: args[2], vpncScript: args.count > 3 ? args[3] : nil, pinnedCert: args.count > 4 && !args[4].isEmpty ? args[4] : nil, verbose: args.contains("-v")) { rc in
     out("[exit] \(rc)")
     done.signal()
 }

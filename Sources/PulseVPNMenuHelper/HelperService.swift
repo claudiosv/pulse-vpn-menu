@@ -15,6 +15,7 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
         cookie: String,
         vpncScript: String?,
         pinnedCertHash: String?,
+        verbose: Bool,
         logPath: String,
         reply: @escaping (NSError?) -> Void
     ) {
@@ -24,6 +25,7 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
                 cookie: cookie,
                 vpncScript: vpncScript,
                 pinnedCertHash: pinnedCertHash,
+                verbose: verbose,
                 logPath: logPath
             )
             reply(nil)

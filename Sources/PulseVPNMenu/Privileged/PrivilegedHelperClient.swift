@@ -168,6 +168,7 @@ final class PrivilegedHelperClient: @unchecked Sendable {
         cookie: String,
         vpncScript: String?,
         pinnedCertHash: String?,
+        verbose: Bool,
         logFile: URL
     ) async throws {
         let helper = try proxy()
@@ -177,6 +178,7 @@ final class PrivilegedHelperClient: @unchecked Sendable {
                 cookie: cookie,
                 vpncScript: vpncScript,
                 pinnedCertHash: pinnedCertHash,
+                verbose: verbose,
                 logPath: logFile.path
             ) { error in
                 if let error {

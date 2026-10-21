@@ -174,7 +174,7 @@ ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
 
 int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
                const char *vpnc_script, const char *pinned_cert,
-               int reconnect_timeout, int dpd_seconds)
+               int reconnect_timeout, int dpd_seconds, int verbose)
 {
     int ret, fd, have_ip;
     const struct oc_ip_info *ip;
@@ -194,7 +194,7 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
     if (!s->vpninfo)
         return -ENOMEM;
 
-    openconnect_set_loglevel(s->vpninfo, PRG_INFO);
+    openconnect_set_loglevel(s->vpninfo, verbose ? PRG_DEBUG : PRG_INFO);
     if (openconnect_set_protocol(s->vpninfo, "pulse") ||
         openconnect_parse_url(s->vpninfo, url) ||
         openconnect_set_cookie(s->vpninfo, cookie)) {
