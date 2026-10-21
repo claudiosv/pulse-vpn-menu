@@ -11,7 +11,7 @@ native macOS administrator-privileges dialog.
 ## Requirements
 
 - macOS 14 (Sonoma) or later.
-- Build-time only: `brew install openssl@3 autoconf automake libtool`. openconnect is built from
+- Build-time only: `brew install autoconf automake libtool`. OpenSSL and openconnect are built from
   upstream `master` by `scripts/build-openconnect.sh` and bundled in the app; pin with
   `OC_REF=v9.21` (tag, branch or sha), and `OC_ARCHS="arm64 x86_64"` for a universal build.
 - Google Chrome or Chromium installed (used to capture the DSID login
