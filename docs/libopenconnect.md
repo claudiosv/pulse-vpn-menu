@@ -68,3 +68,61 @@ first on a fresh checkout.
 - **Helper SHA changed**, so the app re-registers it; expect the Login Items
   approval again.
 - **Universal builds** (`OC_ARCHS="arm64 x86_64"`) are untested.
+
+## Proposal: replace log parsing for stats
+
+Not implemented. Today the shim prints CLI-style lines and the app parses them
+back with regexes (`StatsParser`, `StatsLineClassifier`, string matches in
+`OpenConnectController`). The helper already has most of this data in typed
+form, so the text round trip can go.
+
+| Data | Parsed in | Direct source |
+|---|---|---|
+| RX/TX packets and bytes | `StatsParser` regex | `oc_stats` passed to the stats callback |
+| Tunnel IP, SSL/ESP status text | `StatsParser` regex | `openconnect_get_ip_info()` |
+| Cipher | `StatsParser` regex | `openconnect_get_cstp_cipher()` |
+| Session expiry | `StatsParser` regex | `openconnect_get_auth_expiration()` (`time_t`) |
+| ESP established | `"ESP session established"` match in the controller | no public API |
+| Transient drop start / end | `transientDropMarkers` matches | end: `openconnect_set_reconnected_handler()`; start: no callback |
+
+### Design
+
+1. **Shim:** keep a snapshot struct updated in the stats and connected
+   callbacks: counters, IP, cipher, expiry, link state
+   (`connecting` / `up` / `reconnecting`), `esp_established`. Stop formatting
+   the CLI-style lines.
+2. **Fresh samples:** libopenconnect only yields counters when asked through
+   the command pipe. Add an XPC call `pollStats()` that sends the stats
+   command, waits briefly for the callback and replies with the snapshot. The
+   app's stats timer calls it instead of `requestStatsUpdate`.
+3. **App:** `StatsHistory` gets `append(sample)` and a snapshot setter instead
+   of `ingest(line)`. `espEstablished` and the drop state come from the
+   snapshot; the status poll in `handleUnexpectedExitIfNeeded` already queries
+   the helper each tick and can carry the link state.
+4. **Delete:** the `StatsParser` regexes, `StatsLineClassifier`, and the
+   controller's string matching. The log becomes display-only.
+
+### ESP and drop start
+
+libopenconnect exposes neither DTLS/ESP state nor "a reconnect has begun".
+
+- **Option A (first):** keep one small string match, but in the C shim beside
+  the progress callback, emitting an enum event instead of text.
+- **Option B:** include `openconnect-internal.h` in the shim and read
+  `vpninfo->dtls_state` and the reconnect state directly. Robust to message
+  rewording, but tied to the pinned libopenconnect version (it breaks on a
+  `master` bump unless `OC_REF` is pinned).
+
+### Trade-offs
+
+- **Drop detection latency:** now instant (log-driven); pull-based it is
+  bounded by the poll interval. Push over a reverse XPC connection fixes that
+  but is most of the added complexity.
+- **Log settings:** `hideRepeatedStatsLines` and the log view's repeat filter
+  depend on `StatsLineClassifier`. Either drop the setting, or keep emitting
+  the lines for display only and stop parsing them.
+- **Cleanup, not a bug fix:** the current parsing works. The gain is no
+  coupling to message text.
+
+Suggested order: stats, IP, cipher and expiry first (steps 1–3); ESP and drops
+second.
