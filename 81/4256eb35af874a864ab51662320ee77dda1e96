@@ -1,0 +1,21 @@
+scripts/build-openconnect.sh
+  s_3ad1adb7c5b684::t_92e54c2389fdd0 2,5-9,12,16-17,25,27,29-33,35-39,41-44,46-50,57,59-62,72,100
+README.md
+  s_3ad1adb7c5b684::t_48e78757f2de2b 14-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "814256eb35af874a864ab51662320ee77dda1e96",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
