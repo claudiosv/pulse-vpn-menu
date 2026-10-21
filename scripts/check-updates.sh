@@ -39,9 +39,10 @@ bump_hint() {   # dir tag-or-sha
 
 # ---------------------------------------------------------------- OpenSSL --
 check_openssl() {
-    local dir=openssl pin tags tag series latest newest
+    local dir=openssl pin all tags tag series latest newest
     pin="$(pin_of $dir)"
-    tags="$(remote_tags "$(url_of $dir)" | grep -E '^openssl-[0-9]+\.[0-9]+\.[0-9]+ ')" || true
+    all="$(remote_tags "$(url_of $dir)")" || { echo "OpenSSL: couldn't reach upstream" >&2; return 2; }
+    tags="$(echo "$all" | grep -E '^openssl-[0-9]+\.[0-9]+\.[0-9]+ ')" || true
     tag="$(echo "$tags" | gawk -v p="$pin" '$2 == p { print $1 }' | head -1)"
     echo "OpenSSL        pinned ${tag:-${pin:0:10} (not a release tag)}"
     if [[ -z "$tag" ]]; then
@@ -66,12 +67,14 @@ check_openssl() {
 
 # ----------------------------------------------------------- openconnect --
 check_openconnect() {
-    local dir=openconnect pin url nearest ahead releases latest head behind
+    local dir=openconnect pin url nearest ahead all releases latest head behind
     pin="$(pin_of $dir)"
     url="$(url_of $dir)"
-    git -C third_party/$dir fetch -q --tags origin HEAD
+    git -C third_party/$dir fetch -q --tags origin HEAD \
+        || { echo "openconnect: couldn't reach upstream" >&2; return 2; }
     head="$(git -C third_party/$dir rev-parse FETCH_HEAD)"
-    releases="$(remote_tags "$url" | gawk '{ print $1 }' | grep -E '^v[0-9]+\.[0-9]+$' | $SORT -V)"
+    all="$(remote_tags "$url")" || { echo "openconnect: couldn't reach upstream" >&2; return 2; }
+    releases="$(echo "$all" | gawk '{ print $1 }' | grep -E '^v[0-9]+\.[0-9]+$' | $SORT -V)"
     latest="$(echo "$releases" | tail -1)"
     nearest="$(git -C third_party/$dir describe --tags --abbrev=0 "$pin" 2>/dev/null || true)"
     ahead="$(git -C third_party/$dir rev-list --count "${nearest:-$pin}..$pin" 2>/dev/null || echo '?')"
@@ -104,7 +107,8 @@ check_openconnect() {
 check_vpnc_scripts() {
     local dir=vpnc-scripts pin head behind
     pin="$(pin_of $dir)"
-    git -C third_party/$dir fetch -q origin HEAD
+    git -C third_party/$dir fetch -q origin HEAD \
+        || { echo "vpnc-scripts: couldn't reach upstream" >&2; return 2; }
     head="$(git -C third_party/$dir rev-parse FETCH_HEAD)"
     behind="$(git -C third_party/$dir rev-list --count "$pin..$head")"
     echo "vpnc-scripts   pinned $(git -C third_party/$dir log -1 --format='%h (%cs)' "$pin")"
@@ -118,10 +122,14 @@ check_vpnc_scripts() {
 }
 
 for dep in openssl openconnect vpnc-scripts; do
-    [[ -e third_party/$dep/.git ]] || git submodule update --init third_party/$dep >/dev/null 2>&1 \
+    [[ -e third_party/$dep/.git ]] && continue
+    depth=""; [[ $dep == openssl ]] && depth="--depth 1"   # shallow: full history is ~400 MB
+    git submodule update --init $depth third_party/$dep >/dev/null 2>&1 \
         || { echo "couldn't initialise third_party/$dep" >&2; exit 2; }
 done
 
+# Each check returns 2 when upstream can't be reached: "couldn't check" must not
+# look like "up to date" or "update available".
 check_openssl || exit 2
 check_openconnect || exit 2
 check_vpnc_scripts || exit 2

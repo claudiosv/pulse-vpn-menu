@@ -38,7 +38,12 @@ ARCHS="${OC_ARCHS:-$(uname -m)}"
 # checked out to try. (Not --recursive: OpenSSL's own submodules are test
 # corpora we don't need.)
 for dep in openssl openconnect vpnc-scripts; do
-    [[ -e third_party/$dep/.git ]] || git submodule update --init third_party/$dep
+    [[ -e third_party/$dep/.git ]] && continue
+    if [[ $dep == openssl ]]; then   # shallow: its full history is ~400 MB
+        git submodule update --init --depth 1 third_party/$dep
+    else
+        git submodule update --init third_party/$dep
+    fi
 done
 
 pinned() { git -C "$1" rev-parse HEAD; }

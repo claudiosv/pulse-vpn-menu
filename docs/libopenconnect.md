@@ -87,7 +87,7 @@ the pin prompt.
 ## Build
 
 ```sh
-git submodule update --init              # or clone with --recurse-submodules
+git submodule update --init --depth 1 third_party/openssl   # (the build scripts do this for you)
 brew install autoconf automake libtool   # build-time only
 ./build.sh --install                     # builds libopenconnect first
 ```
