@@ -19,10 +19,14 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
     public var txBytes: UInt64
     public var rxPackets: UInt64
     public var rxBytes: UInt64
+    /// The tunnel's interface name (e.g. `utun6`) and IPv4 address, once up.
+    public var interfaceName: String?
+    public var address: String?
 
     public init(
         linkState: LinkState, espEstablished: Bool, dropCount: Int, statsSequence: Int,
-        txPackets: UInt64, txBytes: UInt64, rxPackets: UInt64, rxBytes: UInt64
+        txPackets: UInt64, txBytes: UInt64, rxPackets: UInt64, rxBytes: UInt64,
+        interfaceName: String?, address: String?
     ) {
         self.linkState = linkState
         self.espEstablished = espEstablished
@@ -32,5 +36,7 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
         self.txBytes = txBytes
         self.rxPackets = rxPackets
         self.rxBytes = rxBytes
+        self.interfaceName = interfaceName
+        self.address = address
     }
 }

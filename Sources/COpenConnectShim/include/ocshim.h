@@ -40,6 +40,9 @@ typedef struct {
     uint32_t drop_count;          /* UP -> RECONNECTING transitions so far */
     uint64_t stats_seq;           /* increments on every fresh counter sample */
     uint64_t tx_pkts, tx_bytes, rx_pkts, rx_bytes;   /* cumulative */
+    /* Set once the tunnel is up; empty before that. */
+    char ifname[32];              /* e.g. "utun6" */
+    char address[64];             /* the tunnel's IPv4 address, if it has one */
 } ocshim_snapshot;
 
 ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx);

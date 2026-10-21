@@ -67,6 +67,7 @@ final class OpenConnectController: ObservableObject {
     /// Baselines for noticing change between helper snapshots: the last
     /// counter sample recorded, and the drop count already handled. Both
     /// restart at 0 with each new session.
+    private var tunnel: (name: String, address: String)?
     private var lastStatsSequence = 0
     private var lastDropCount = 0
 
@@ -165,9 +166,11 @@ final class OpenConnectController: ObservableObject {
         runtimeState?.startedAt
     }
 
+    /// e.g. "utun6, 172.25.228.228", from the interface the helper's session
+    /// actually created (refreshed with each snapshot).
     var connectedInterfaceDescription: String? {
-        guard isConnected(), let (name, ip) = NetworkInterfaces.findVPNInterface() else { return nil }
-        return "\(name), \(ip)"
+        guard isConnected(), let tunnel else { return nil }
+        return "\(tunnel.name), \(tunnel.address)"
     }
 
     var helperStatus: SMAppService.Status { PrivilegedHelperClient.shared.status }
@@ -312,7 +315,8 @@ final class OpenConnectController: ObservableObject {
             }
 
             espEstablished = status.snapshot?.espEstablished ?? false
-            if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
+            if espEstablished, let snapshot = status.snapshot, let ip = snapshot.address {
+                apply(snapshot, recordSample: false)
                 state.vpnGatewayIP = ip
                 state.save()
                 runtimeState = state
@@ -368,6 +372,7 @@ final class OpenConnectController: ObservableObject {
         runtimeState = nil
         RuntimeState.clear()
         connectedProfileID = nil
+        tunnel = nil
     }
 
     func reconnect() async throws {
@@ -394,7 +399,8 @@ final class OpenConnectController: ObservableObject {
             }
 
             espEstablished = status?.snapshot?.espEstablished ?? false
-            if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
+            if espEstablished, let snapshot = status?.snapshot, let ip = snapshot.address {
+                apply(snapshot, recordSample: false)
                 var updated = state
                 updated.vpnGatewayIP = ip
                 updated.save()
@@ -470,6 +476,7 @@ final class OpenConnectController: ObservableObject {
         runtimeState = nil
         RuntimeState.clear()
         connectedProfileID = nil
+        tunnel = nil
     }
 
     private func notifyLost(state: RuntimeState, reason: String) {
@@ -482,6 +489,9 @@ final class OpenConnectController: ObservableObject {
     /// from `pollStats`, whose counters are fresh — a new traffic sample.
     private func apply(_ snapshot: SessionSnapshot, recordSample: Bool) {
         espEstablished = snapshot.espEstablished
+        if let name = snapshot.interfaceName, let address = snapshot.address {
+            tunnel = (name, address)
+        }
 
         if recordSample, snapshot.statsSequence > 0, snapshot.statsSequence != lastStatsSequence {
             lastStatsSequence = snapshot.statsSequence

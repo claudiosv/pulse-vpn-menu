@@ -27,6 +27,9 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
     public var txBytes: UInt64
     public var rxPackets: UInt64
     public var rxBytes: UInt64
+    /// The tunnel's interface name (e.g. `utun6`) and IPv4 address, once up.
+    public var interfaceName: String?
+    public var address: String?
 
     init(_ c: ocshim_snapshot) {
         linkState = LinkState(rawValue: Int32(c.link_state)) ?? .connecting
@@ -37,6 +40,17 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
         txBytes = c.tx_bytes
         rxPackets = c.rx_pkts
         rxBytes = c.rx_bytes
+        var c = c
+        interfaceName = Self.string(&c.ifname)
+        address = Self.string(&c.address)
+    }
+
+    /// A fixed-size C `char[]` (imported as a tuple), or nil if empty.
+    private static func string<T>(_ buffer: inout T) -> String? {
+        withUnsafePointer(to: &buffer) {
+            let s = String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self))
+            return s.isEmpty ? nil : s
+        }
     }
 }
 

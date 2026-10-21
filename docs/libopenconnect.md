@@ -80,6 +80,7 @@ that the helper hands over XPC as JSON (`SessionSnapshot`, in
 | `txPackets` / `txBytes` / `rxPackets` / `rxBytes`, `statsSequence` | libopenconnect's stats callback (`oc_stats`) |
 | `linkState` (`connecting` / `up` / `reconnecting`), `dropCount` | tunnel setup, `openconnect_set_reconnected_handler`, and the drop markers below |
 | `espEstablished` | the "ESP session established" progress line (below) |
+| `interfaceName`, `address` | `openconnect_get_ifname()` and `openconnect_get_ip_info()` right after the tunnel is created |
 
 - **XPC:** `sessionStatus` now carries the latest snapshot (cheap, cached
   counters); `pollStats` asks libopenconnect for fresh counters and replies
@@ -94,6 +95,11 @@ that the helper hands over XPC as JSON (`SessionSnapshot`, in
   `Configured as…` / `RX:…` lines; it logs one `Tunnel up: …` line and the
   session expiry once. The "hide repeated stats lines" setting was removed
   with the lines it hid.
+- **Tunnel identity:** the menu's `utun6, 172.25.…` text, the route gateway
+  and the "tunnel is up" check use the snapshot's interface name and address.
+  `NetworkInterfaces.findVPNInterface()` (a scan for the first `utun*` with an
+  IPv4 address, skipping `100.x`) is gone; it could pick the wrong interface
+  next to Tailscale or another VPN.
 - **Removed:** `StatsLineClassifier`, the regexes in `StatsParser`
   (`StatsHistory` now just stores samples), the controller's string matching,
   and the tunnel IP / status / expiry / cipher fields, which nothing read.
@@ -119,6 +125,5 @@ libopenconnect version.
   tick), not instantly as before.
 - **Poll cost:** `pollStats` can block a helper XPC thread for up to 2 s if
   no sample arrives; a concurrent `stopSession` waits for it.
-- **Still text-based, elsewhere:** `RouteManager` reads `dscacheutil` output,
-  and `NetworkInterfaces` finds the tunnel by interface name. libopenconnect
-  knows the tunnel's real interface name, so the latter could be exact.
+- **Still text-based, elsewhere:** `RouteManager` reads `dscacheutil` output
+  to find a stale hostname route.

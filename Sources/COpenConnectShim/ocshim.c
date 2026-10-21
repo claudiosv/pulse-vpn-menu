@@ -176,8 +176,9 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
                const char *vpnc_script, const char *pinned_cert,
                int reconnect_timeout, int dpd_seconds)
 {
-    int ret, fd;
+    int ret, fd, have_ip;
     const struct oc_ip_info *ip;
+    const char *ifname;
     time_t exp;
 
     s->pinned_cert = pinned_cert;
@@ -228,11 +229,15 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
         goto out;
     }
 
+    have_ip = openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) >= 0;
+    ifname = openconnect_get_ifname(s->vpninfo);
     pthread_mutex_lock(&s->mu);
     s->snap.link_state = OCSHIM_LINK_UP;
+    snprintf(s->snap.ifname, sizeof(s->snap.ifname), "%s", ifname ? ifname : "");
+    snprintf(s->snap.address, sizeof(s->snap.address), "%s", have_ip && ip->addr ? ip->addr : "");
     pthread_mutex_unlock(&s->mu);
 
-    if (openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) >= 0) {
+    if (have_ip) {
         emitf(s, PRG_INFO, "Tunnel up: %s%s%s, MTU %d\n",
               ip->addr ? ip->addr : "",
               (ip->addr && ip->addr6) ? " + " : "",

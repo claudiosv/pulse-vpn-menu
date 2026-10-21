@@ -43,7 +43,8 @@ final class VPNSession: @unchecked Sendable {
             dropCount: Int(s.dropCount),
             statsSequence: Int(s.statsSequence),
             txPackets: s.txPackets, txBytes: s.txBytes,
-            rxPackets: s.rxPackets, rxBytes: s.rxBytes
+            rxPackets: s.rxPackets, rxBytes: s.rxBytes,
+            interfaceName: s.interfaceName, address: s.address
         )
         return try? JSONEncoder().encode(wire)
     }
