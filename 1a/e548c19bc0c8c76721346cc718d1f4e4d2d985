@@ -1,0 +1,69 @@
+Sources/PulseVPNMenuHelper/VPNSession.swift
+  s_3ad1adb7c5b684::t_7b0245bba9e5db 6,9-15,17-21,26-27,29-31,34-41,54,71,78,80-82,89-91,105,107-108,111-123,125-147
+scripts/test-shim.sh
+  s_3ad1adb7c5b684::t_e0861fb6d27294 1-11
+docs/libopenconnect.md
+  s_3ad1adb7c5b684::t_8368d8bcf38eb2 6-16,31-32,37-70,122-130,161-164
+  s_3ad1adb7c5b684::t_fe667a55473ff1 165
+Sources/PulseVPNMenuHelper/RequestValidation.swift
+  s_3ad1adb7c5b684::t_256e37542cfcef 1-42
+Tests/OpenConnectKitTests/EmbeddedOpenConnectTests.swift
+  s_3ad1adb7c5b684::t_3a995cb15cea95 45,59
+  s_3ad1adb7c5b684::t_ad1f5f58e98481 13,21-23,26
+  s_3ad1adb7c5b684::t_1d66e50cafea53 1-12,14-20,24-25,27-44,46-58,60-73
+Sources/PulseVPNHelperProtocol/PrivilegedHelperProtocol.swift
+  s_3ad1adb7c5b684::t_226863a56e7928 11-14,49-53,74-75
+Sources/PulseVPNHelperProtocol/SessionStatus.swift
+  s_3ad1adb7c5b684::t_226863a56e7928 1-83
+Tests/shim_test.c
+  s_3ad1adb7c5b684::t_ec236b2d46f4cf 1-69
+Sources/OpenConnectKit/EmbeddedOpenConnect.swift
+  s_3ad1adb7c5b684::t_e02e7bb0c8dc78 93
+  s_3ad1adb7c5b684::t_7ea613af91db29 89-92
+  s_3ad1adb7c5b684::t_ef3fdf35a055c5 26-27,41,67-69,74-75,80,129-132,161-164
+Sources/PulseVPNMenuHelper/ObserverHub.swift
+  s_3ad1adb7c5b684::t_c0ed348999d104 1-28
+Package.swift
+  s_3ad1adb7c5b684::t_8d775733843b56 50-51,57-59
+  s_3ad1adb7c5b684::t_7ea613af91db29 52-56
+Tests/PulseVPNMenuHelperTests/HelperTests.swift
+  s_3ad1adb7c5b684::t_24884286ee1c5d 1-139
+Sources/PulseVPNHelperProtocol/SessionSnapshot.swift
+  s_3ad1adb7c5b684::t_226863a56e7928 3-5,18-19,30,37
+Sources/PulseVPNMenuHelper/HelperListenerDelegate.swift
+  s_3ad1adb7c5b684::t_8d775733843b56 11
+  s_3ad1adb7c5b684::t_b80079a4369616 16-22
+Sources/PulseVPNMenuHelper/CappedLogFile.swift
+  s_3ad1adb7c5b684::t_b80079a4369616 22-27
+Sources/PulseVPNMenuHelper/HelperService.swift
+  s_3ad1adb7c5b684::t_65faf6a0745b3b 18-21
+  s_3ad1adb7c5b684::t_b80079a4369616 12-17,22-27,39,41,46,54-55,76,80,84,88,91-99,102
+Sources/OCShimProbe/main.swift
+  s_3ad1adb7c5b684::t_6d0e2477458bed 39-42
+Sources/COpenConnectShim/include/ocshim.h
+  s_3ad1adb7c5b684::t_4e459e34cb230f 28-32,48,72-74
+Sources/COpenConnectShim/ocshim.c
+  s_3ad1adb7c5b684::t_fc7162d0a40231 25,29-34,69,73-75,85,91-92,115,118,120-121,123-124,164,172-173,255,333,344
+Sources/PulseVPNMenu/Privileged/PrivilegedHelperClient.swift
+  s_3ad1adb7c5b684::t_c868029787aa20 9-10,12-14,20,22-25,137-154,167-169,171-172,178,181,183,186-189,194-195,201-224,227-244,253,260-262,266-269,273,277,281,285,289,293,295,297-302,304-305,308-314,319-334,336-339,341-343
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_3ad1adb7c5b684::t_fd3768b32f1276 42-50,68-82,97-104,120-124,132-140,144,150-156,160,166,168,249-255,317-318,341-353,355-356,358-361,363-364,366-370,390,416-417,421-432,434-439,441,446-452,454-455,505-567,617,626,631-635
+Sources/PulseVPNMenu/VPN/StatsParser.swift
+  s_3ad1adb7c5b684::t_6d3cf56229dbb7 26-27,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ae548c19bc0c8c76721346cc718d1f4e4d2d985",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
