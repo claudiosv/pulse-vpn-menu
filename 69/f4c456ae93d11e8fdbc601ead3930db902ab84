@@ -1,0 +1,20 @@
+Sources/PulseVPNMenu/App/AppDelegate.swift
+  s_3ad1adb7c5b684::t_3943f8865e902f 72-111
+  s_3ad1adb7c5b684::t_603c619aaf2317 47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69f4c456ae93d11e8fdbc601ead3930db902ab84",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
