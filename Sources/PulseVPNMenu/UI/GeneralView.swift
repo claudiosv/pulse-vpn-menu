@@ -23,7 +23,7 @@ struct GeneralView: View {
                             )
                             .labelsHidden()
                         }
-                        Text("How often the app asks openconnect (via SIGUSR1) for updated traffic stats while connected.")
+                        Text("How often the app asks the VPN session for updated traffic stats while connected.")
                             .cardFootnote()
                     }
                 }
@@ -47,7 +47,7 @@ struct GeneralView: View {
                                 .font(.system(size: 13.5))
                         }
                         .toggleStyle(.switch)
-                        Text("Posts a notification when openconnect exits without you clicking Disconnect — the session expired, it gave up reconnecting, or it crashed.")
+                        Text("Posts a notification when the VPN session ends without you clicking Disconnect — it expired, it gave up reconnecting, or the helper crashed.")
                             .cardFootnote()
                     }
                 }
@@ -59,7 +59,7 @@ struct GeneralView: View {
                                 .font(.system(size: 13.5))
                         }
                         .toggleStyle(.switch)
-                        Text("Posts a notification when openconnect loses the link and starts retrying on its own (for up to 30s), and another when it reconnects.")
+                        Text("Posts a notification when the VPN link drops and the session starts retrying on its own (for up to 30s), and another when it reconnects.")
                             .cardFootnote()
                     }
                 }

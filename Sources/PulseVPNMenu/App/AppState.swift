@@ -29,8 +29,8 @@ final class AppState: ObservableObject {
 
     /// How often the menu bar / status text refreshes from `controller`'s
     /// polled state — independent of `AppSettings.statsPollInterval`
-    /// (which governs how often openconnect itself is asked for RX/TX
-    /// stats), even though both happened to share one constant before.
+    /// (which governs how often the session is asked for RX/TX stats),
+    /// even though both happened to share one constant before.
     private static let statusRefreshInterval: TimeInterval = 5
 
     private var refreshTimer: Timer?
@@ -56,7 +56,7 @@ final class AppState: ObservableObject {
     }
 
     func refresh() {
-        // Piggybacks on this timer to notice openconnect exiting without
+        // Piggybacks on this timer to notice the VPN session ending without
         // being asked to; that path cleans up and re-refreshes when done.
         Task {
             await controller.handleUnexpectedExitIfNeeded()
@@ -95,7 +95,7 @@ final class AppState: ObservableObject {
     }
 
     var statusDetail: String {
-        if controller.isBusy { return "Talking to openconnect…" }
+        if controller.isBusy { return "Talking to the VPN helper…" }
         guard isConnected else {
             return connectionStore.profiles.isEmpty
                 ? "Add a connection to get started"

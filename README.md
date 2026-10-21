@@ -45,7 +45,7 @@ the raw `.build/release/PulseVPNMenu` binary.
      graph, and a peek at recent log activity.
    - **Connections** — add/edit/delete saved connections, pick the default,
      or connect to any of them directly.
-   - **Logs** — openconnect's full output.
+   - **Logs** — the VPN session's output.
    - **General** — app-wide preferences.
 3. On **Connections**, add a connection: give it a name, the VPN URL (e.g.
    `https://vpn.example.edu/emp`), and optionally a vpnc script (e.g.
@@ -53,10 +53,11 @@ the raw `.build/release/PulseVPNMenu` binary.
    toggles.
 4. Click **Connect** (in the window, or from the menu bar). A Chrome window
    opens to the VPN login page — log in there. Once the `DSID` session
-   cookie appears, Chrome closes and `openconnect` launches (you'll see the
-   standard "administrator privileges" password dialog, since VPN routing
+   cookie appears, Chrome closes and the VPN session starts in the
+   privileged helper (the first time, macOS asks you to approve the helper in
+   System Settings > General > Login Items & Extensions, since VPN routing
    requires root).
-5. The **Logs** tab shows openconnect's output from when the connection
+5. The **Logs** tab shows the session's output from when the connection
    started (persisted across closing the window or relaunching the app).
    **Disconnect**/**Reconnect** act on whichever connection is currently up.
 
@@ -67,8 +68,8 @@ See `Sources/PulseVPNMenu/`, organized by responsibility:
 - `Networking/` — the from-scratch Chrome DevTools Protocol client used to
   capture the DSID cookie (no external dependencies — built on
   `URLSessionWebSocketTask`).
-- `VPN/` — openconnect process lifecycle, route management, interface/
-  gateway discovery, and stats parsing.
-- `Privileged/` — the `osascript`/administrator-privileges command runner.
+- `VPN/` — session lifecycle (driven through the helper), route management,
+  default-gateway discovery, and the stats history.
+- `Privileged/` — the XPC client for the privileged helper.
 - `Persistence/` — connection profiles, runtime state, and the log store.
 - `UI/` — Settings and Logs windows.

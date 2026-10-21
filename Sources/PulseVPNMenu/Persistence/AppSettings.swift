@@ -12,7 +12,7 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
-    /// Whether Quit should send SIGTERM to openconnect and clean up routes
+    /// Whether Quit should stop the VPN session and clean up routes
     /// before the app exits. Defaults to `false` — quitting the menu bar
     /// app has never touched an active tunnel, and changing that default
     /// would silently drop a working VPN connection for anyone who quits

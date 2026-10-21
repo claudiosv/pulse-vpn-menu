@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Scrolling live view of openconnect's output. Bound directly to
+/// Scrolling live view of the VPN session's output. Bound directly to
 /// `LogStore`, which seeds its history from disk on launch and keeps
 /// tailing the log file, so this shows everything "since this
 /// connection/app started" — not just what arrived while the window

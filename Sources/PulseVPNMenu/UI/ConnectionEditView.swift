@@ -61,7 +61,7 @@ struct ConnectionEditView: View {
                         .autocorrectionDisabled()
                 }
                 Section("Advanced") {
-                    TextField("vpnc script (openconnect -s)", text: $script, prompt: Text("vpn-slice …"))
+                    TextField("vpnc script", text: $script, prompt: Text("vpn-slice …"))
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Don't replace the default route", isOn: $noDefaultRoute)
                     Toggle("Verbose openconnect logging", isOn: $debug)
