@@ -25,6 +25,11 @@ typedef struct {
      * "pin-sha256:..." fingerprint to pass back as the pin if the user
      * decides to trust it. */
     void (*cert_rejected)(void *ctx, const char *reason, const char *hash);
+    /* The snapshot's link state, ESP flag, drop count or tunnel identity
+     * changed (not the counters). Called on whichever libopenconnect thread
+     * noticed, with no shim locks held; read the new state with
+     * ocshim_get_snapshot(). */
+    void (*state_changed)(void *ctx);
 } ocshim_callbacks;
 
 enum {
@@ -40,6 +45,7 @@ typedef struct {
     uint32_t drop_count;          /* UP -> RECONNECTING transitions so far */
     uint64_t stats_seq;           /* increments on every fresh counter sample */
     uint64_t tx_pkts, tx_bytes, rx_pkts, rx_bytes;   /* cumulative */
+    double sampled_at;            /* unix time of the last counter sample */
     /* Set once the tunnel is up; empty before that. */
     char ifname[32];              /* e.g. "utun6" */
     char address[64];             /* the tunnel's IPv4 address, if it has one */
@@ -63,10 +69,9 @@ void ocshim_request_reconnect(ocshim_t *s);  /* ~ SIGUSR2; clears esp_establishe
 /* Latest state; the counters are as of the last sample. */
 void ocshim_get_snapshot(ocshim_t *s, ocshim_snapshot *out);
 
-/* Asks libopenconnect for fresh counters (~ SIGUSR1) and waits up to
- * `timeout_ms` for them. Fills `out` either way; returns 1 if the sample
- * is new, 0 on timeout or if the session ended. */
-int ocshim_poll_stats(ocshim_t *s, int timeout_ms, ocshim_snapshot *out);
+/* Asks libopenconnect to refresh the counters (~ SIGUSR1). Returns at once;
+ * the sample lands in the snapshot (stats_seq increments) a moment later. */
+void ocshim_request_stats(ocshim_t *s);
 
 /* Only after ocshim_run() has returned. */
 void ocshim_free(ocshim_t *s);

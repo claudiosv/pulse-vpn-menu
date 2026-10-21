@@ -22,11 +22,15 @@ struct ocshim {
     pthread_mutex_t cmd_lock;    /* serializes command writes with fd teardown */
     int cmd_fd;                  /* -1 until ocshim_run() has set up the pipe */
 
-    pthread_mutex_t mu;          /* guards snap and done */
-    pthread_cond_t cv;           /* signalled on a new sample and on exit */
+    pthread_mutex_t mu;          /* guards snap */
     ocshim_snapshot snap;
-    int done;
 };
+
+static void notify_changed(struct ocshim *s)
+{
+    if (s->cb.state_changed)
+        s->cb.state_changed(s->ctx);
+}
 
 static void emit(struct ocshim *s, int level, const char *msg)
 {
@@ -62,9 +66,13 @@ static const char *const drop_markers[] = {
 static void note_progress(struct ocshim *s, const char *msg)
 {
     size_t i;
+    int changed = 0;
 
     pthread_mutex_lock(&s->mu);
     if (strstr(msg, "ESP session established")) {
+        if (!s->snap.esp_established ||
+            s->snap.link_state == OCSHIM_LINK_RECONNECTING)
+            changed = 1;
         s->snap.esp_established = 1;
         if (s->snap.link_state == OCSHIM_LINK_RECONNECTING)
             s->snap.link_state = OCSHIM_LINK_UP;
@@ -74,11 +82,14 @@ static void note_progress(struct ocshim *s, const char *msg)
                 /* One drop per episode, however many retry lines follow. */
                 s->snap.link_state = OCSHIM_LINK_RECONNECTING;
                 s->snap.drop_count++;
+                changed = 1;
                 break;
             }
         }
     }
     pthread_mutex_unlock(&s->mu);
+    if (changed)
+        notify_changed(s);
 }
 
 static void progress(void *priv, int level, const char *fmt, ...)
@@ -101,11 +112,16 @@ static void progress(void *priv, int level, const char *fmt, ...)
 static void reconnected(void *priv)
 {
     struct ocshim *s = priv;
+    int changed = 0;
 
     pthread_mutex_lock(&s->mu);
-    if (s->snap.link_state == OCSHIM_LINK_RECONNECTING)
+    if (s->snap.link_state == OCSHIM_LINK_RECONNECTING) {
         s->snap.link_state = OCSHIM_LINK_UP;
+        changed = 1;
+    }
     pthread_mutex_unlock(&s->mu);
+    if (changed)
+        notify_changed(s);
 }
 
 /* A certificate that fails normal validation is accepted only if it matches
@@ -145,6 +161,7 @@ static int process_auth_form(void *priv, struct oc_auth_form *form)
 static void stats_handler(void *priv, const struct oc_stats *st)
 {
     struct ocshim *s = priv;
+    struct timespec now;
 
     pthread_mutex_lock(&s->mu);
     s->snap.tx_pkts = st->tx_pkts;
@@ -152,7 +169,8 @@ static void stats_handler(void *priv, const struct oc_stats *st)
     s->snap.rx_pkts = st->rx_pkts;
     s->snap.rx_bytes = st->rx_bytes;
     s->snap.stats_seq++;
-    pthread_cond_broadcast(&s->cv);
+    clock_gettime(CLOCK_REALTIME, &now);
+    s->snap.sampled_at = (double)now.tv_sec + now.tv_nsec / 1e9;
     pthread_mutex_unlock(&s->mu);
 }
 
@@ -166,7 +184,6 @@ ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
     s->ctx = ctx;
     pthread_mutex_init(&s->cmd_lock, NULL);
     pthread_mutex_init(&s->mu, NULL);
-    pthread_cond_init(&s->cv, NULL);
     s->cmd_fd = -1;
     signal(SIGPIPE, SIG_IGN); /* process-wide, like openconnect's main() */
     return s;
@@ -185,7 +202,6 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
     pthread_mutex_lock(&s->mu);
     memset(&s->snap, 0, sizeof(s->snap));
     s->snap.link_state = OCSHIM_LINK_CONNECTING;
-    s->done = 0;
     pthread_mutex_unlock(&s->mu);
 
     s->vpninfo = openconnect_vpninfo_new(
@@ -236,6 +252,7 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
     snprintf(s->snap.ifname, sizeof(s->snap.ifname), "%s", ifname ? ifname : "");
     snprintf(s->snap.address, sizeof(s->snap.address), "%s", have_ip && ip->addr ? ip->addr : "");
     pthread_mutex_unlock(&s->mu);
+    notify_changed(s);
 
     if (have_ip) {
         emitf(s, PRG_INFO, "Tunnel up: %s%s%s, MTU %d\n",
@@ -289,12 +306,6 @@ out:
     pthread_mutex_unlock(&s->cmd_lock);
     openconnect_vpninfo_free(s->vpninfo); /* also closes the command pipe */
     s->vpninfo = NULL;
-
-    /* Wake any ocshim_poll_stats() still waiting for a sample. */
-    pthread_mutex_lock(&s->mu);
-    s->done = 1;
-    pthread_cond_broadcast(&s->cv);
-    pthread_mutex_unlock(&s->mu);
     return ret;
 }
 
@@ -319,6 +330,7 @@ void ocshim_request_reconnect(ocshim_t *s)
     pthread_mutex_lock(&s->mu);
     s->snap.esp_established = 0;
     pthread_mutex_unlock(&s->mu);
+    notify_changed(s);
     send_cmd(s, OC_CMD_PAUSE);
 }
 
@@ -329,40 +341,13 @@ void ocshim_get_snapshot(ocshim_t *s, ocshim_snapshot *out)
     pthread_mutex_unlock(&s->mu);
 }
 
-int ocshim_poll_stats(ocshim_t *s, int timeout_ms, ocshim_snapshot *out)
+void ocshim_request_stats(ocshim_t *s)
 {
-    struct timespec deadline;
-    uint64_t before;
-    int fresh;
-
-    pthread_mutex_lock(&s->mu);
-    before = s->snap.stats_seq;
-    pthread_mutex_unlock(&s->mu);
-
     send_cmd(s, OC_CMD_STATS);
-
-    clock_gettime(CLOCK_REALTIME, &deadline);
-    deadline.tv_sec += timeout_ms / 1000;
-    deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
-    if (deadline.tv_nsec >= 1000000000L) {
-        deadline.tv_sec++;
-        deadline.tv_nsec -= 1000000000L;
-    }
-
-    pthread_mutex_lock(&s->mu);
-    while (s->snap.stats_seq == before && !s->done) {
-        if (pthread_cond_timedwait(&s->cv, &s->mu, &deadline) == ETIMEDOUT)
-            break;
-    }
-    fresh = s->snap.stats_seq != before;
-    *out = s->snap;
-    pthread_mutex_unlock(&s->mu);
-    return fresh;
 }
 
 void ocshim_free(ocshim_t *s)
 {
-    pthread_cond_destroy(&s->cv);
     pthread_mutex_destroy(&s->mu);
     pthread_mutex_destroy(&s->cmd_lock);
     free(s);

@@ -56,11 +56,6 @@ final class AppState: ObservableObject {
     }
 
     func refresh() {
-        // Piggybacks on this timer to notice the VPN session ending without
-        // being asked to; that path cleans up and re-refreshes when done.
-        Task {
-            await controller.handleUnexpectedExitIfNeeded()
-        }
         let connected = controller.isConnected()
         isConnected = connected
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil

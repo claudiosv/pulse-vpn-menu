@@ -39,7 +39,15 @@ enum ConnectError: Error, CustomStringConvertible {
 /// stop/reconnect/stats requests to the helper.
 @MainActor
 final class OpenConnectController: ObservableObject {
-    @Published private(set) var isBusy = false
+    @Published private(set) var isBusy = false {
+        didSet {
+            // A session change that arrived while an action held `isBusy` was
+            // only recorded; look at it again now that the action is over.
+            if oldValue, !isBusy {
+                Task { await self.handleUnexpectedExitIfNeeded() }
+            }
+        }
+    }
     @Published private(set) var connectedProfileID: UUID?
 
     let stats = StatsHistory()
@@ -52,21 +60,26 @@ final class OpenConnectController: ObservableObject {
     private var statsTimerTask: Task<Void, Never>?
     private var runtimeState: RuntimeState?
 
-    /// Mirrors the session's `espEstablished` flag, refreshed from each
-    /// helper snapshot. The interface coming up is not sufficient on its own
-    /// — the ESP negotiation can still fail or hang after that point — so
-    /// `connectOnce` gates declaring `.up` on this flag as well, not just on
-    /// the interface existing.
-    private var espEstablished = false
-
     /// Set while the helper reports the link as lost and libopenconnect is
     /// retrying on its own, cleared once the link is back up. Only one
     /// "dropped" notification is posted per episode.
     private var inTransientDrop = false
 
-    /// Baselines for noticing change between helper snapshots: the last
-    /// counter sample recorded, and the drop count already handled. Both
-    /// restart at 0 with each new session.
+    /// The latest `SessionStatus` the helper has told us about (pushed, or
+    /// fetched to resync). Nil until the first one of a new session.
+    private var latestStatus: SessionStatus?
+
+    /// Callers parked in `waitForStatus`, resumed when a status satisfies
+    /// their predicate or their timeout passes.
+    private struct StatusWaiter {
+        let predicate: (SessionStatus) -> Bool
+        let continuation: CheckedContinuation<SessionStatus?, Never>
+    }
+    private var waiters: [UUID: StatusWaiter] = [:]
+
+    /// Baselines for noticing change between statuses: the last counter
+    /// sample recorded, and the drop count already handled. Both restart at 0
+    /// with each new session.
     private var tunnel: (name: String, address: String)?
     private var lastStatsSequence = 0
     private var lastDropCount = 0
@@ -81,6 +94,14 @@ final class OpenConnectController: ObservableObject {
     init(logStore: LogStore, appSettings: AppSettings) {
         self.logStore = logStore
         self.appSettings = appSettings
+        PrivilegedHelperClient.shared.observe(
+            onStatus: { [weak self] status in
+                Task { @MainActor in self?.handle(status) }
+            },
+            onConnectionLost: { [weak self] in
+                Task { @MainActor in await self?.resyncWithHelper() }
+            }
+        )
         // A session lives in the helper and outlives the app: if we recorded
         // one, ask the helper whether it's still up and reattach. (Only when
         // the helper is already approved — launch must not trigger a
@@ -96,10 +117,11 @@ final class OpenConnectController: ObservableObject {
 
     /// The helper reporting a running session isn't proof the tunnel is
     /// actually up — it can be wedged or mid-reconnect. Rather than flipping
-    /// straight to "connected", ask it for fresh counters and wait for a real
-    /// sample to come back before setting `runtimeState`, which is what
-    /// `isConnected()` reports on. `isBusy` is held during the check so
-    /// the UI reads "working…" instead of flashing "disconnected".
+    /// straight to "connected", wait for the traffic counters (refreshed
+    /// every second helper-side) to actually advance before setting
+    /// `runtimeState`, which is what `isConnected()` reports on. `isBusy` is
+    /// held during the check so the UI reads "working…" instead of flashing
+    /// "disconnected".
     private func verifyAndReattach(state: RuntimeState) {
         isBusy = true
         logStore.append("Found a recorded VPN session; confirming it's still running…\n")
@@ -107,35 +129,43 @@ final class OpenConnectController: ObservableObject {
             guard let self else { return }
             defer { self.isBusy = false }
 
-            guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else {
-                // Helper unreachable — leave the recorded state alone so a
-                // later launch can try again.
+            do {
+                try await PrivilegedHelperClient.shared.verifyProtocolVersion()
+            } catch {
+                // Leave the recorded state alone: after the helper is updated
+                // a later launch can still find the tunnel.
+                self.logStore.append("\(error)\n")
+                return
+            }
+            guard let first = try? await PrivilegedHelperClient.shared.sessionStatus() else {
                 self.logStore.append("Could not reach the helper; not reattaching.\n")
                 return
             }
-            guard status.isRunning else {
+            guard first.isRunning else {
                 self.logStore.append("The recorded VPN session is no longer running.\n")
                 RuntimeState.clear()
                 return
             }
 
-            // pollStats waits up to ~2 s for the sample itself.
-            var confirmed: SessionSnapshot?
-            for _ in 0..<3 {
-                if let snap = await PrivilegedHelperClient.shared.pollStats(), snap.statsSequence > 0 {
-                    confirmed = snap
+            let baseline = first.snapshot?.statsSequence ?? 0
+            var confirmed: SessionStatus?
+            for _ in 0..<5 {
+                try? await Task.sleep(for: .milliseconds(1100))
+                if let status = try? await PrivilegedHelperClient.shared.sessionStatus(),
+                   status.isRunning, (status.snapshot?.statsSequence ?? 0) > baseline {
+                    confirmed = status
                     break
                 }
             }
-            guard let snapshot = confirmed else {
+            guard let status = confirmed else {
                 self.logStore.append("Could not confirm the existing VPN session is responding; not reattaching.\n")
                 RuntimeState.clear()
                 return
             }
             // Drops that happened before we got here aren't news.
-            self.lastDropCount = snapshot.dropCount
+            self.lastDropCount = status.snapshot?.dropCount ?? 0
             self.lastStatsSequence = 0
-            self.apply(snapshot, recordSample: true)
+            self.handle(status, recordSample: true)
 
             self.runtimeState = state
             self.connectedProfileID = state.profileID
@@ -216,6 +246,13 @@ final class OpenConnectController: ObservableObject {
             return
         }
 
+        do {
+            try await PrivilegedHelperClient.shared.verifyProtocolVersion()
+        } catch {
+            logStore.append("\(error)\n")
+            return
+        }
+
         var workingProfile = profile
         while true {
             do {
@@ -274,10 +311,11 @@ final class OpenConnectController: ObservableObject {
         try AppPaths.prepareForNewConnection()
         logStore.resetForNewConnection()
         stats.clear()
-        espEstablished = false
         inTransientDrop = false
         lastStatsSequence = 0
         lastDropCount = 0
+        // The previous session's final status would satisfy "has ended".
+        latestStatus = nil
 
         let script = profile.script.flatMap { $0.isEmpty ? nil : $0 } ?? Self.bundledVPNCScriptPath
         try await PrivilegedHelperClient.shared.startSession(
@@ -300,40 +338,36 @@ final class OpenConnectController: ObservableObject {
         state.save()
         runtimeState = state
 
-        let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
-        while Date() < deadline {
-            let status = try await PrivilegedHelperClient.shared.sessionStatus()
-            if !status.isRunning {
-                runtimeState = nil
-                RuntimeState.clear()
-                if let failure = status.certFailure {
-                    return ConnectAttemptResult(outcome: .untrustedCert(failure), dsidUsed: dsidValue)
-                }
-                if status.exitCode == -EPERM {
-                    return ConnectAttemptResult(outcome: .rejectedCookie, dsidUsed: dsidValue)
-                }
-                return ConnectAttemptResult(outcome: .failed(status.exitCode), dsidUsed: dsidValue)
-            }
-
-            espEstablished = status.snapshot?.espEstablished ?? false
-            if espEstablished, let snapshot = status.snapshot, let ip = snapshot.address {
-                apply(snapshot, recordSample: false)
-                state.vpnGatewayIP = ip
-                state.save()
-                runtimeState = state
-
-                if !profile.noDefaultRoute {
-                    try await routeManager.setDefaultRoute(gatewayIP: ip)
-                }
-                if let post = profile.post, !post.isEmpty {
-                    runPostCommand(post)
-                }
-                startStatsTimer()
-                return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
-            }
-            try await Task.sleep(for: .milliseconds(500))
+        // Up means the session reached ESP *and* the tunnel has an address;
+        // the interface alone isn't enough. Ending first means failure.
+        guard let status = await waitForStatus(timeout: Self.tunnelTimeout, until: Self.isTunnelUp) else {
+            throw ConnectError.tunnelTimeout
         }
-        throw ConnectError.tunnelTimeout
+        if !status.isRunning {
+            runtimeState = nil
+            RuntimeState.clear()
+            if let failure = status.certFailure {
+                return ConnectAttemptResult(outcome: .untrustedCert(failure), dsidUsed: dsidValue)
+            }
+            if status.exitCode == -EPERM {
+                return ConnectAttemptResult(outcome: .rejectedCookie, dsidUsed: dsidValue)
+            }
+            return ConnectAttemptResult(outcome: .failed(status.exitCode), dsidUsed: dsidValue)
+        }
+
+        guard let ip = status.snapshot?.address else { throw ConnectError.tunnelTimeout }
+        state.vpnGatewayIP = ip
+        state.save()
+        runtimeState = state
+
+        if !profile.noDefaultRoute {
+            try await routeManager.setDefaultRoute(gatewayIP: ip)
+        }
+        if let post = profile.post, !post.isEmpty {
+            runPostCommand(post)
+        }
+        startStatsTimer()
+        return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
     }
 
     // MARK: - Disconnect / reconnect
@@ -353,11 +387,7 @@ final class OpenConnectController: ObservableObject {
             logStore.append("Failed to stop the VPN session: \(error)\n")
         }
 
-        let deadline = Date().addingTimeInterval(10)
-        while Date() < deadline {
-            if !(await sessionIsRunning()) { break }
-            try? await Task.sleep(for: .milliseconds(500))
-        }
+        _ = await waitForStatus(timeout: 10) { !$0.isRunning }
 
         do {
             try await routeManager.cleanupAfterDisconnect(
@@ -382,60 +412,47 @@ final class OpenConnectController: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
-        espEstablished = false
         inTransientDrop = false
+        // The ESP flag in whatever we last heard is about the old link.
+        latestStatus = nil
         try await PrivilegedHelperClient.shared.requestReconnect()
         logStore.append("Asked the VPN session to reconnect.\n")
 
-        let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
-        while Date() < deadline {
-            let status = try? await PrivilegedHelperClient.shared.sessionStatus()
-            if !(status?.isRunning ?? false) {
-                logStore.append("Reconnect failed: the VPN session ended.\n")
-                // The user asked for a reconnect, not a disconnect — losing
-                // the tunnel here is just as unrequested as below.
-                notifyLost(state: state, reason: "Reconnect failed.")
-                await tearDownAfterExit(state: state)
-                return
-            }
-
-            espEstablished = status?.snapshot?.espEstablished ?? false
-            if espEstablished, let snapshot = status?.snapshot, let ip = snapshot.address {
-                apply(snapshot, recordSample: false)
-                var updated = state
-                updated.vpnGatewayIP = ip
-                updated.save()
-                runtimeState = updated
-                if !updated.noDefaultRoute {
-                    try await routeManager.setDefaultRoute(gatewayIP: ip)
-                }
-                logStore.append("Reconnected; VPN interface IP: \(ip)\n")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(500))
+        guard let status = await waitForStatus(timeout: Self.tunnelTimeout, until: Self.isTunnelUp) else {
+            logStore.append("Reconnect timed out waiting for the tunnel to come back up.\n")
+            return
         }
-        logStore.append("Reconnect timed out waiting for the tunnel to come back up.\n")
+        guard status.isRunning, let ip = status.snapshot?.address else {
+            logStore.append("Reconnect failed: the VPN session ended.\n")
+            // The user asked for a reconnect, not a disconnect — losing
+            // the tunnel here is just as unrequested as below.
+            notifyLost(state: state, reason: "Reconnect failed.")
+            await tearDownAfterExit(state: state)
+            return
+        }
+
+        var updated = state
+        updated.vpnGatewayIP = ip
+        updated.save()
+        runtimeState = updated
+        if !updated.noDefaultRoute {
+            try await routeManager.setDefaultRoute(gatewayIP: ip)
+        }
+        logStore.append("Reconnected; VPN interface IP: \(ip)\n")
     }
 
     // MARK: - Unrequested disconnects
 
-    /// Called from `AppState`'s periodic refresh. Catches the session ending
-    /// on its own — session expiry, `--reconnect-timeout` running out, a
-    /// helper crash — and does the cleanup `disconnect()` would have done,
-    /// plus an optional notification. Every user-requested path (`connect`,
-    /// `disconnect`, `reconnect`, Quit) runs under `isBusy` and clears
-    /// `runtimeState` itself, so it never gets here.
+    /// Catches the session ending on its own — session expiry,
+    /// `--reconnect-timeout` running out, a helper crash — and does the
+    /// cleanup `disconnect()` would have done, plus an optional notification.
+    /// Runs off the status the helper pushed (see `handle`), and again when
+    /// an action that held `isBusy` finishes. Every user-requested path
+    /// (`connect`, `disconnect`, `reconnect`, Quit) runs under `isBusy` and
+    /// clears `runtimeState` itself, so it never gets here.
     func handleUnexpectedExitIfNeeded() async {
-        guard !isBusy, runtimeState != nil else { return }
-        // If the helper can't be reached, say nothing: that's not evidence
-        // the tunnel is gone.
-        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else { return }
-        if status.isRunning {
-            if let snapshot = status.snapshot { apply(snapshot, recordSample: false) }
-            return
-        }
-        // Re-check after the await: a user action may have started meanwhile.
-        guard !isBusy, let state = runtimeState else { return }
+        guard !isBusy, let state = runtimeState,
+              let status = latestStatus, !status.isRunning else { return }
         isBusy = true
         defer { isBusy = false }
 
@@ -485,11 +502,70 @@ final class OpenConnectController: ObservableObject {
         Notifier.shared.post(.lost, title: "VPN disconnected", body: "\(profileLabel(state)): \(reason)")
     }
 
-    /// Folds a helper snapshot into app state: the ESP flag, drop/restore
-    /// transitions (with their notifications), and — only for snapshots
-    /// from `pollStats`, whose counters are fresh — a new traffic sample.
+    // MARK: - Helper status
+
+    /// Takes in a `SessionStatus` — pushed by the helper, or fetched to
+    /// resync — and wakes anyone waiting on it. `recordSample` is for the
+    /// stats timer's reads: pushed statuses carry the counters as they
+    /// happened to be, so only deliberate reads add a graph point.
+    func handle(_ status: SessionStatus, recordSample: Bool = false) {
+        latestStatus = status
+        if let snapshot = status.snapshot {
+            apply(snapshot, recordSample: recordSample)
+        }
+        for (id, waiter) in waiters where waiter.predicate(status) {
+            resolveWaiter(id, with: status)
+        }
+        Task { await handleUnexpectedExitIfNeeded() }
+    }
+
+    /// After the XPC connection dropped (the helper may have crashed), pushed
+    /// changes may have been missed: ask for the truth once.
+    private func resyncWithHelper() async {
+        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else { return }
+        handle(status)
+    }
+
+    /// Suspends until a status satisfies `predicate` or `timeout` passes
+    /// (nil). Checks what we already know, then asks the helper once in case
+    /// the change it's waiting for was pushed before we started waiting.
+    private func waitForStatus(
+        timeout: TimeInterval,
+        until predicate: @escaping (SessionStatus) -> Bool
+    ) async -> SessionStatus? {
+        let id = UUID()
+        return await withCheckedContinuation { continuation in
+            waiters[id] = StatusWaiter(predicate: predicate, continuation: continuation)
+            if let latest = latestStatus, predicate(latest) {
+                resolveWaiter(id, with: latest)
+                return
+            }
+            Task { [weak self] in
+                if let status = try? await PrivilegedHelperClient.shared.sessionStatus() {
+                    self?.handle(status)
+                }
+            }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(timeout))
+                self?.resolveWaiter(id, with: nil)
+            }
+        }
+    }
+
+    private func resolveWaiter(_ id: UUID, with status: SessionStatus?) {
+        waiters.removeValue(forKey: id)?.continuation.resume(returning: status)
+    }
+
+    /// "Up" for connect/reconnect: the session ended (nothing more to wait
+    /// for), or ESP is established and the tunnel has an address.
+    private static func isTunnelUp(_ status: SessionStatus) -> Bool {
+        !status.isRunning || (status.snapshot?.espEstablished == true && status.snapshot?.address != nil)
+    }
+
+    /// Folds a snapshot into app state: the tunnel identity, drop/restore
+    /// transitions (with their notifications), and — when `recordSample` —
+    /// a new traffic sample.
     private func apply(_ snapshot: SessionSnapshot, recordSample: Bool) {
-        espEstablished = snapshot.espEstablished
         if let name = snapshot.interfaceName, let address = snapshot.address {
             tunnel = (name, address)
         }
@@ -538,7 +614,7 @@ final class OpenConnectController: ObservableObject {
             // interval — the caller just confirmed (or established) the
             // tunnel, so there's no reason to sit without stats for up to
             // a full poll interval before the first sample appears.
-            await self.pollStatsNow()
+            await self.refreshCounters()
             while !Task.isCancelled {
                 // Re-read on every iteration (rather than capturing once)
                 // so a change made in Settings while connected takes
@@ -547,14 +623,16 @@ final class OpenConnectController: ObservableObject {
                 try? await Task.sleep(for: .seconds(interval))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
-                await self.pollStatsNow()
+                await self.refreshCounters()
             }
         }
     }
 
-    private func pollStatsNow() async {
-        guard let snapshot = await PrivilegedHelperClient.shared.pollStats() else { return }
-        apply(snapshot, recordSample: true)
+    /// The helper refreshes the counters every second; this reads them at
+    /// the user's chosen interval and adds a graph point.
+    private func refreshCounters() async {
+        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else { return }
+        handle(status, recordSample: true)
     }
 
     private func stopStatsTimer() {
@@ -569,12 +647,6 @@ final class OpenConnectController: ObservableObject {
     }
 
     // MARK: - Helpers
-
-    /// Asks the helper; an unreachable helper counts as "not running" for the
-    /// callers' wait loops (they have their own deadlines).
-    private func sessionIsRunning() async -> Bool {
-        (try? await PrivilegedHelperClient.shared.sessionStatus())?.isRunning ?? false
-    }
 
     /// Modal prompt to pin a certificate that failed normal validation. The
     /// fingerprint is the thing to verify out-of-band; "Cancel" is the

@@ -8,11 +8,18 @@ import PulseVPNHelperProtocol
 /// delegate method is even called, so no manual `SecCode` validation is
 /// needed here.
 final class HelperListenerDelegate: NSObject, NSXPCListenerDelegate {
-    private let service = HelperService()
+    let service = HelperService()
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         connection.exportedInterface = NSXPCInterface(with: PrivilegedHelperProtocol.self)
         connection.exportedObject = service
+        // The app exports a `SessionObserverProtocol` on its side of the
+        // connection; session changes are pushed through it.
+        connection.remoteObjectInterface = NSXPCInterface(with: SessionObserverProtocol.self)
+        service.observers.add(connection)
+        connection.invalidationHandler = { [weak service, weak connection] in
+            if let connection { service?.observers.remove(connection) }
+        }
         connection.resume()
         return true
     }

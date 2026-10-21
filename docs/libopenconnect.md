@@ -3,6 +3,17 @@
 The VPN session runs inside the privileged helper via libopenconnect, instead
 of as an `openconnect` subprocess. Branch: `libopenconnect-shim`.
 
+## Tests
+
+```sh
+scripts/test-shim.sh   # shim: marker text -> link state, ESP, drop count, notifications
+swift test             # helper: argument validation + real XPC (version, status, observer push);
+                       # OpenConnectKit: requestReconnect() re-entering the wrapper (was a deadlock)
+```
+
+Not covered: the app-side client's error handling (it needs an enabled
+`SMAppService` daemon), and anything involving a real gateway.
+
 ## Status
 
 Builds, signs and verifies with `./build.sh`. Verified against public test
@@ -17,20 +28,46 @@ reconnect, `vpn-slice`.
 | `scripts/build-openconnect.sh` | Builds OpenSSL 3.5.9 and libopenconnect from source (static, macOS 27 target) into `vendor/openconnect/`. `OC_REF` / first argument picks a tag, branch or sha (default `master`); `OC_ARCHS` picks architectures. |
 | `Sources/COpenConnectShim` | C wrapper: cookie, `make_cstp_connection`, `setup_tun_device` (runs the vpnc-script), `setup_dtls`, `mainloop`. Commands (cancel, stats, reconnect) go through the library's command pipe. |
 | `Sources/OpenConnectKit` | Swift wrapper (`EmbeddedOpenConnect`): one session on its own thread, with log, connected and cert-rejected callbacks. |
-| `Sources/PulseVPNMenuHelper/VPNSession.swift` | Hosts the single session in the helper; tracks status for XPC; sets `PATH` so `vpn-slice` is found. |
+| `Sources/PulseVPNMenuHelper/VPNSession.swift` | Hosts the single session in the helper; builds the `SessionStatus`, samples counters once a second, notifies observers; sets `PATH` so `vpn-slice` is found. |
+| `Sources/PulseVPNMenuHelper/ObserverHub.swift`, `RequestValidation.swift` | Pushes status to connected apps; checks the arguments the app sends. |
 | `Sources/OCShimProbe` | Manual harness: `sudo .build/release/OCShimProbe <url> <cookie> [script] [pin-sha256:…]`. |
 
 ### XPC protocol
 
-`startSession`, `sessionStatus`, `stopSession`, `requestStatsUpdate`,
-`requestReconnect` replace the pid-based subprocess calls. There is at most
-one session, so no handle is passed. The session outlives the app; a
-relaunched app finds it with `sessionStatus` and reattaches after confirming
-a fresh stats sample.
+Calls (app → helper), all one-shot and typed:
+`protocolVersion`, `startSession`, `sessionStatus`, `stopSession`,
+`requestReconnect`, plus the four route calls. There is at most one session,
+so no handle is passed. The session outlives the app; a relaunched app finds
+it with `sessionStatus` and reattaches once the counters are seen advancing.
 
-The shim prints the status lines the CLI used to (`Configured as …`,
-`RX: … TX: …`, `SSL ciphersuite: …`, session expiry), so the app's log
-parsing and stats graph are unchanged.
+- **`SessionStatus`** (JSON `Data`): `state` (`none` / `running` / `exited`),
+  `exitCode`, `startedAt`, `certFailure`, and the `SessionSnapshot` while
+  running. One value for both `sessionStatus` replies and pushed changes, so
+  adding a field never touches the protocol.
+- **Pushed changes:** the app exports a `SessionObserverProtocol` on its side
+  of the same connection; the helper calls `sessionStatusChanged(_:)` when the
+  session starts, ends, or its link state, ESP flag, drop count or tunnel
+  changes. Counters are not pushed (they change every second): the helper
+  refreshes them once a second, and the app reads them with `sessionStatus`
+  at the interval the user chose.
+- **Version check:** `PrivilegedHelperConstants.protocolVersion` (bump it on
+  any incompatible change). The app calls `protocolVersion` once per XPC
+  connection and refuses to connect to a helper that answers differently or
+  can't answer (one that predates it), with a message about updating it.
+- **Failed calls:** each call installs its own XPC error handler, so a helper
+  crash or dropped connection mid-call throws instead of leaving the `await`
+  hanging. A dropped connection also triggers a resync (`sessionStatus`),
+  since pushed changes may have been missed.
+
+### Argument checks in the helper
+
+The helper runs as root, so it validates what the app sends
+(`RequestValidation`): the log path must be exactly
+`/Users/<u>/Library/Application Support/Pulse VPN Menu/Logs/current.log` with
+no symlinks (and the file is opened `O_NOFOLLOW`), the VPN URL must be
+`https://`, and route addresses must be plain IPv4. The vpnc-script is
+deliberately **not** restricted: running a user-configured script as root is
+how openconnect works, and the profile that holds it is user-writable.
 
 ### Certificate pinning
 
@@ -82,15 +119,15 @@ that the helper hands over XPC as JSON (`SessionSnapshot`, in
 | `espEstablished` | the "ESP session established" progress line (below) |
 | `interfaceName`, `address` | `openconnect_get_ifname()` and `openconnect_get_ip_info()` right after the tunnel is created |
 
-- **XPC:** `sessionStatus` now carries the latest snapshot (cheap, cached
-  counters); `pollStats` asks libopenconnect for fresh counters and replies
-  within ~2 s. `requestStatsUpdate` is gone.
-- **App:** `OpenConnectController.apply(_:recordSample:)` folds a snapshot into
-  state. The stats timer uses `pollStats` and records a sample only when
-  `statsSequence` changed. Drop/restore notifications fire from `dropCount`
-  and `linkState`, so a drop shorter than the poll interval is still
-  reported. The connect, reconnect and reattach checks read `espEstablished`
-  and fresh samples from snapshots.
+- **App:** `OpenConnectController.handle(_:recordSample:)` takes in each
+  `SessionStatus` (pushed, or fetched for the stats timer) and wakes anything
+  waiting on it. `waitForStatus` replaces the 500 ms polling loops in
+  connect, reconnect and disconnect. Drop/restore notifications come from
+  `dropCount` and `linkState`, so a drop shorter than a poll is still
+  reported. The stats timer reads `sessionStatus` and records a sample only
+  when `statsSequence` changed, timestamped with the helper's `sampledAt`.
+  Unexpected session ends are handled off the pushed status, again after any
+  action holding `isBusy` finishes, and after a connection loss.
 - **Log:** display-only now. The shim no longer prints the CLI-style
   `Configured as…` / `RX:…` lines; it logs one `Tunnel up: …` line and the
   session expiry once. The "hide repeated stats lines" setting was removed
@@ -121,10 +158,11 @@ libopenconnect version.
 
 ### Trade-offs
 
-- **Latency:** drops are noticed on the next status poll (the app's refresh
-  tick), not instantly as before.
-- **Poll cost:** `pollStats` can block a helper XPC thread for up to 2 s if
-  no sample arrives; a concurrent `stopSession` waits for it.
+- **Counters lag by up to a second** (the helper's sampling interval) plus the
+  user's poll interval; state changes are pushed immediately.
+- **A lost push is recovered, not retried:** if the helper dies, the app
+  learns from the connection drop and resyncs; an event lost any other way
+  would only show up at the next `sessionStatus` read.
 - **Still text-based, elsewhere:** `RouteManager` reads `dscacheutil` output
   to find a stale hostname route.
 

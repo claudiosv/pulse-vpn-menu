@@ -19,7 +19,12 @@ final class CappedLogFile: @unchecked Sendable {
     private let capBytes: UInt64
 
     init?(path: String, capBytes: UInt64 = 1_048_576) {
-        guard let handle = FileHandle(forWritingAtPath: path) else { return nil }
+        // O_NOFOLLOW: this runs as root, so refuse to be redirected through
+        // a symlink at the final component (the callers also validate the
+        // whole path — see `RequestValidation.sessionLogPath`).
+        let fd = open(path, O_WRONLY | O_NOFOLLOW)
+        guard fd >= 0 else { return nil }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.path = path
         self.handle = handle
         self.capBytes = capBytes

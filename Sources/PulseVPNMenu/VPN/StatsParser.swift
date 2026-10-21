@@ -23,10 +23,11 @@ final class StatsHistory: ObservableObject {
 
     var current: VpnStats? { samples.last }
 
-    /// Records the counters from a fresh `SessionSnapshot`.
+    /// Records the counters from a `SessionSnapshot`, stamped with when the
+    /// helper sampled them (not when we happened to read them).
     func append(_ snapshot: SessionSnapshot) {
         samples.append(VpnStats(
-            timestamp: Date(),
+            timestamp: snapshot.sampledAt,
             rxPackets: Int(clamping: snapshot.rxPackets),
             rxBytes: Int(clamping: snapshot.rxBytes),
             txPackets: Int(clamping: snapshot.txPackets),

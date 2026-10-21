@@ -47,6 +47,16 @@ let package = Package(
             name: "PulseVPNMenuHelper",
             dependencies: ["PulseVPNHelperProtocol", "OpenConnectKit"],
             path: "Sources/PulseVPNMenuHelper"
+        ),
+        .testTarget(
+            name: "OpenConnectKitTests",
+            dependencies: ["OpenConnectKit"],
+            path: "Tests/OpenConnectKitTests"
+        ),
+        .testTarget(
+            name: "PulseVPNMenuHelperTests",
+            dependencies: ["PulseVPNMenuHelper", "PulseVPNHelperProtocol"],
+            path: "Tests/PulseVPNMenuHelperTests"
         )
     ]
 )

@@ -6,13 +6,23 @@ import ServiceManagement
 enum PrivilegedHelperError: Error, CustomStringConvertible {
     case notEnabled(SMAppService.Status)
     case connectionUnavailable
+    /// The XPC connection failed or was interrupted while a call was in flight.
+    case connectionFailed(Error)
     case helperError(NSError)
+    /// The running helper speaks a different protocol (or none we can read).
+    case versionMismatch(helper: Int?, app: Int)
+    case badReply
 
     var description: String {
         switch self {
         case .notEnabled(let status): return "Privileged helper is not enabled (status: \(status))."
         case .connectionUnavailable: return "Could not reach the privileged helper."
+        case .connectionFailed(let error): return "Lost contact with the privileged helper: \(error.localizedDescription)"
         case .helperError(let error): return error.localizedDescription
+        case .versionMismatch(let helper, let app):
+            let found = helper.map { "version \($0)" } ?? "an older version"
+            return "The installed privileged helper is \(found), but this app needs version \(app). Quit and reopen the app to update it; if that doesn't help, remove the helper in System Settings > General > Login Items & Extensions and try again."
+        case .badReply: return "The privileged helper sent a reply this app couldn't read."
         }
     }
 }
@@ -124,6 +134,24 @@ final class PrivilegedHelperClient: @unchecked Sendable {
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
+    // MARK: - Pushed session changes
+
+    private let observer = SessionObserverEndpoint()
+    private var protocolVerified = false
+
+    /// Registers the app's observer. `onStatus` receives every session change
+    /// the helper pushes (it does not carry counters — read those with
+    /// `sessionStatus()`); `onConnectionLost` fires when the XPC connection
+    /// is interrupted or invalidated (e.g. the helper crashed), after which
+    /// pushed state may have been missed and the caller should resync with
+    /// `sessionStatus()`. Both are called on arbitrary threads.
+    func observe(
+        onStatus: @escaping @Sendable (SessionStatus) -> Void,
+        onConnectionLost: @escaping @Sendable () -> Void
+    ) {
+        observer.set(onStatus: onStatus, onConnectionLost: onConnectionLost)
+    }
+
     // MARK: - Connection
 
     private func connectionOrMake() -> NSXPCConnection {
@@ -136,32 +164,83 @@ final class PrivilegedHelperClient: @unchecked Sendable {
             options: .privileged
         )
         newConnection.remoteObjectInterface = NSXPCInterface(with: PrivilegedHelperProtocol.self)
+        // The helper pushes session changes back through this.
+        newConnection.exportedInterface = NSXPCInterface(with: SessionObserverProtocol.self)
+        newConnection.exportedObject = observer
         newConnection.setCodeSigningRequirement(PrivilegedHelperConstants.helperRequirement)
-        newConnection.invalidationHandler = { [weak self] in self?.clearConnection() }
-        newConnection.interruptionHandler = { [weak self] in self?.clearConnection() }
+        newConnection.invalidationHandler = { [weak self] in self?.connectionEnded() }
+        newConnection.interruptionHandler = { [weak self] in self?.connectionEnded() }
         newConnection.activate()
         connection = newConnection
         return newConnection
     }
 
-    private func clearConnection() {
+    private func connectionEnded() {
         lock.lock()
         connection = nil
+        protocolVerified = false
         lock.unlock()
+        observer.connectionLost()
     }
 
-    private func proxy() throws -> PrivilegedHelperProtocol {
+    /// The remote proxy, with `onError` called if the connection fails before
+    /// a reply arrives — the only signal XPC gives for a call that will never
+    /// be answered.
+    private func proxy(onError: @escaping @Sendable (Error) -> Void) throws -> PrivilegedHelperProtocol {
         guard status == .enabled else {
             throw PrivilegedHelperError.notEnabled(status)
         }
         let c = connectionOrMake()
-        guard let proxy = c.remoteObjectProxyWithErrorHandler({ _ in }) as? PrivilegedHelperProtocol else {
+        let handler: @Sendable (Error) -> Void = { onError(PrivilegedHelperError.connectionFailed($0)) }
+        guard let proxy = c.remoteObjectProxyWithErrorHandler(handler) as? PrivilegedHelperProtocol else {
             throw PrivilegedHelperError.connectionUnavailable
         }
         return proxy
     }
 
+    /// One XPC call as an `async` function. Resumes exactly once: with the
+    /// reply, or with the error if the connection fails first.
+    private func request<T: Sendable>(
+        _ send: @escaping (PrivilegedHelperProtocol, @escaping @Sendable (T) -> Void) -> Void
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let once = OneShot(continuation)
+            do {
+                let helper = try proxy { once.resume(throwing: $0) }
+                send(helper) { once.resume(returning: $0) }
+            } catch {
+                once.resume(throwing: error)
+            }
+        }
+    }
+
+    /// A call whose reply is just `NSError?`.
+    private func requestVoid(
+        _ send: @escaping (PrivilegedHelperProtocol, @escaping @Sendable (NSError?) -> Void) -> Void
+    ) async throws {
+        let error: NSError? = try await request(send)
+        if let error { throw PrivilegedHelperError.helperError(error) }
+    }
+
     // MARK: - Typed operations (one async wrapper per protocol method)
+
+    /// Throws `versionMismatch` unless the running helper speaks this app's
+    /// protocol. Checked once per XPC connection; call before the first real
+    /// request after registering or reconnecting.
+    func verifyProtocolVersion() async throws {
+        if lock.withLock({ protocolVerified }) { return }
+        let found: Int
+        do {
+            found = try await request { helper, reply in helper.protocolVersion(reply: reply) }
+        } catch {
+            // A helper that predates the call can't answer it.
+            throw PrivilegedHelperError.versionMismatch(helper: nil, app: PrivilegedHelperConstants.protocolVersion)
+        }
+        guard found == PrivilegedHelperConstants.protocolVersion else {
+            throw PrivilegedHelperError.versionMismatch(helper: found, app: PrivilegedHelperConstants.protocolVersion)
+        }
+        lock.withLock { protocolVerified = true }
+    }
 
     func startSession(
         url: String,
@@ -171,127 +250,95 @@ final class PrivilegedHelperClient: @unchecked Sendable {
         verbose: Bool,
         logFile: URL
     ) async throws {
-        let helper = try proxy()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        try await requestVoid { helper, reply in
             helper.startSession(
                 url: url,
                 cookie: cookie,
                 vpncScript: vpncScript,
                 pinnedCertHash: pinnedCertHash,
                 verbose: verbose,
-                logPath: logFile.path
-            ) { error in
-                if let error {
-                    continuation.resume(throwing: PrivilegedHelperError.helperError(error))
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
+                logPath: logFile.path,
+                reply: reply
+            )
         }
     }
 
-    func sessionStatus() async throws -> HelperSessionStatus {
-        let helper = try proxy()
-        return await withCheckedContinuation { continuation in
-            helper.sessionStatus { state, exitCode, startedAt, certReason, certHash, snapshot in
-                continuation.resume(returning: HelperSessionStatus(
-                    state: HelperSessionStatus.State(rawValue: state) ?? .none,
-                    exitCode: exitCode,
-                    startedAt: startedAt > 0 ? Date(timeIntervalSince1970: startedAt) : nil,
-                    certFailure: certReason.map { CertFailure(reason: $0, hash: certHash) },
-                    snapshot: snapshot.flatMap { try? JSONDecoder().decode(SessionSnapshot.self, from: $0) }
-                ))
-            }
-        }
-    }
-
-    /// Fresh traffic counters plus link state; nil if no session is running
-    /// (or the helper is unreachable).
-    func pollStats() async -> SessionSnapshot? {
-        guard let helper = try? proxy() else { return nil }
-        return await withCheckedContinuation { continuation in
-            helper.pollStats { data in
-                continuation.resume(returning: data.flatMap { try? JSONDecoder().decode(SessionSnapshot.self, from: $0) })
-            }
-        }
+    func sessionStatus() async throws -> SessionStatus {
+        let data: Data = try await request { helper, reply in helper.sessionStatus(reply: reply) }
+        guard let status = SessionStatus.decode(data) else { throw PrivilegedHelperError.badReply }
+        return status
     }
 
     func stopSession() async throws {
-        try await call { helper, reply in helper.stopSession(reply: reply) }
+        try await requestVoid { helper, reply in helper.stopSession(reply: reply) }
     }
 
     func requestReconnect() async throws {
-        try await call { helper, reply in helper.requestReconnect(reply: reply) }
+        try await requestVoid { helper, reply in helper.requestReconnect(reply: reply) }
     }
 
     func setDefaultRoute(gatewayIP: String) async throws {
-        try await call(argument: gatewayIP) { helper, ip, reply in helper.setDefaultRoute(gatewayIP: ip, reply: reply) }
+        try await requestVoid { helper, reply in helper.setDefaultRoute(gatewayIP: gatewayIP, reply: reply) }
     }
 
     func addDefaultRoute(gatewayIP: String) async throws {
-        try await call(argument: gatewayIP) { helper, ip, reply in helper.addDefaultRoute(gatewayIP: ip, reply: reply) }
+        try await requestVoid { helper, reply in helper.addDefaultRoute(gatewayIP: gatewayIP, reply: reply) }
     }
 
     func deleteDefaultRoute(gatewayIP: String) async throws {
-        try await call(argument: gatewayIP) { helper, ip, reply in helper.deleteDefaultRoute(gatewayIP: ip, reply: reply) }
+        try await requestVoid { helper, reply in helper.deleteDefaultRoute(gatewayIP: gatewayIP, reply: reply) }
     }
 
     func deleteHostRoute(ip: String) async throws {
-        try await call(argument: ip) { helper, ip, reply in helper.deleteHostRoute(ip: ip, reply: reply) }
+        try await requestVoid { helper, reply in helper.deleteHostRoute(ip: ip, reply: reply) }
+    }
+}
+
+/// Resumes a continuation at most once. XPC delivers either a reply or an
+/// error for a call, but a connection tearing down mid-call can race the two;
+/// resuming a checked continuation twice traps.
+private final class OneShot<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+
+    init(_ continuation: CheckedContinuation<T, Error>) {
+        self.continuation = continuation
     }
 
-    // MARK: - Shared plumbing for the common "no arguments, error out" and
-    // "String in, error out" method shapes.
+    func resume(returning value: T) { take()?.resume(returning: value) }
+    func resume(throwing error: Error) { take()?.resume(throwing: error) }
 
-    private func call(
-        _ body: (PrivilegedHelperProtocol, @escaping (NSError?) -> Void) -> Void
-    ) async throws {
-        let helper = try proxy()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            body(helper) { error in
-                if let error {
-                    continuation.resume(throwing: PrivilegedHelperError.helperError(error))
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
-    }
-
-    private func call(
-        argument: String,
-        _ body: (PrivilegedHelperProtocol, String, @escaping (NSError?) -> Void) -> Void
-    ) async throws {
-        let helper = try proxy()
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            body(helper, argument) { error in
-                if let error {
-                    continuation.resume(throwing: PrivilegedHelperError.helperError(error))
-                } else {
-                    continuation.resume(returning: ())
-                }
-            }
+    private func take() -> CheckedContinuation<T, Error>? {
+        lock.withLock {
+            defer { continuation = nil }
+            return continuation
         }
     }
 }
 
-struct CertFailure: Equatable {
-    var reason: String
-    /// `pin-sha256:...`; what to store as the profile's pin to trust it.
-    var hash: String?
-}
+/// The app side of the reverse XPC interface: receives pushed session
+/// changes from the helper.
+final class SessionObserverEndpoint: NSObject, SessionObserverProtocol, @unchecked Sendable {
+    private let lock = NSLock()
+    private var onStatus: (@Sendable (SessionStatus) -> Void)?
+    private var onConnectionLost: (@Sendable () -> Void)?
 
-struct HelperSessionStatus {
-    enum State: Int32 { case none = 0, running = 1, exited = 2 }
+    func set(
+        onStatus: @escaping @Sendable (SessionStatus) -> Void,
+        onConnectionLost: @escaping @Sendable () -> Void
+    ) {
+        lock.withLock {
+            self.onStatus = onStatus
+            self.onConnectionLost = onConnectionLost
+        }
+    }
 
-    var state: State
-    /// libopenconnect's result once `exited` (-EINTR after stopSession,
-    /// -EPERM for a rejected cookie, ...).
-    var exitCode: Int32
-    var startedAt: Date?
-    var certFailure: CertFailure?
-    /// Link state and counters as of the last `pollStats`; nil unless running.
-    var snapshot: SessionSnapshot?
+    func sessionStatusChanged(_ status: Data) {
+        guard let decoded = SessionStatus.decode(status) else { return }
+        lock.withLock { onStatus }?(decoded)
+    }
 
-    var isRunning: Bool { state == .running }
+    func connectionLost() {
+        lock.withLock { onConnectionLost }?()
+    }
 }

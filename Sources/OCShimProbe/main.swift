@@ -36,8 +36,10 @@ sigint.resume()
 let ticker = DispatchSource.makeTimerSource(queue: .main)
 ticker.schedule(deadline: .now() + 5, repeating: 5)
 ticker.setEventHandler {
-    if let r = oc.pollStats() {
-        out("[stats] link \(r.snapshot.linkState) esp \(r.snapshot.espEstablished) drops \(r.snapshot.dropCount) tx \(r.snapshot.txPackets) pkts/\(r.snapshot.txBytes) B rx \(r.snapshot.rxPackets) pkts/\(r.snapshot.rxBytes) B")
+    oc.requestStats()   // returns at once; the sample lands in the snapshot a moment later
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        guard let r = oc.snapshot() else { return }
+        out("[stats] link \(r.linkState) esp \(r.espEstablished) drops \(r.dropCount) tunnel \(r.interfaceName ?? "-") \(r.address ?? "-") tx \(r.txPackets) pkts/\(r.txBytes) B rx \(r.rxPackets) pkts/\(r.rxBytes) B")
     }
 }
 ticker.resume()

@@ -9,6 +9,22 @@ import PulseVPNHelperProtocol
 /// are direct `Process` spawns with a real argv array.
 final class HelperService: NSObject, PrivilegedHelperProtocol {
     private let session = VPNSession()
+    /// App connections to push session changes to; the listener delegate
+    /// adds each accepted connection.
+    let observers = ObserverHub()
+
+    override init() {
+        super.init()
+        let session = session, observers = observers
+        session.onChange = {
+            guard let data = session.currentStatus().encoded() else { return }
+            observers.broadcast(data)
+        }
+    }
+
+    func protocolVersion(reply: @escaping (Int) -> Void) {
+        reply(PrivilegedHelperConstants.protocolVersion)
+    }
 
     func startSession(
         url: String,
@@ -20,13 +36,14 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
         reply: @escaping (NSError?) -> Void
     ) {
         do {
+            guard !cookie.isEmpty else { throw HelperError("No login cookie") }
             try session.start(
-                url: url,
+                url: try RequestValidation.vpnURL(url),
                 cookie: cookie,
                 vpncScript: vpncScript,
                 pinnedCertHash: pinnedCertHash,
                 verbose: verbose,
-                logPath: logPath
+                logPath: try RequestValidation.sessionLogPath(logPath)
             )
             reply(nil)
         } catch {
@@ -34,13 +51,8 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
         }
     }
 
-    func sessionStatus(reply: @escaping (Int32, Int32, Double, String?, String?, Data?) -> Void) {
-        let s = session.currentStatus()
-        reply(s.state.rawValue, s.exitCode, s.startedAt, s.certFailureReason, s.certHash, session.snapshotData())
-    }
-
-    func pollStats(reply: @escaping (Data?) -> Void) {
-        reply(session.pollStatsData())
+    func sessionStatus(reply: @escaping (Data) -> Void) {
+        reply(session.currentStatus().encoded() ?? Data())
     }
 
     func stopSession(reply: @escaping (NSError?) -> Void) {
@@ -61,25 +73,33 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
     }
 
     func setDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void) {
-        runRoute(["change", "default", gatewayIP], reply: reply)
+        runRoute(["change", "default"], address: gatewayIP, reply: reply)
     }
 
     func addDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void) {
-        runRoute(["add", "default", gatewayIP], reply: reply)
+        runRoute(["add", "default"], address: gatewayIP, reply: reply)
     }
 
     func deleteDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void) {
-        runRoute(["delete", "default", gatewayIP], reply: reply)
+        runRoute(["delete", "default"], address: gatewayIP, reply: reply)
     }
 
     func deleteHostRoute(ip: String, reply: @escaping (NSError?) -> Void) {
-        runRoute(["-n", "delete", ip], reply: reply)
+        runRoute(["-n", "delete"], address: ip, reply: reply)
     }
 
-    private func runRoute(_ arguments: [String], reply: @escaping (NSError?) -> Void) {
+    /// `arguments` plus the one address, which must be a plain IPv4 address.
+    private func runRoute(_ arguments: [String], address: String, reply: @escaping (NSError?) -> Void) {
+        let validated: String
+        do {
+            validated = try RequestValidation.ipv4(address)
+        } catch {
+            reply(Self.error(error.localizedDescription))
+            return
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/sbin/route")
-        process.arguments = arguments
+        process.arguments = arguments + [validated]
         let stderrPipe = Pipe()
         process.standardError = stderrPipe
         process.standardOutput = Pipe()

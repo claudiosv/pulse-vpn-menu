@@ -8,6 +8,10 @@ public enum PrivilegedHelperConstants {
     /// on purpose, so there's exactly one string to get right.
     public static let machServiceName = "com.claudiosv.pulse-vpn-menu.helper"
 
+    /// Bump whenever `PrivilegedHelperProtocol`, `SessionObserverProtocol` or
+    /// the JSON shapes they carry change incompatibly.
+    public static let protocolVersion = 2
+
     public static let mainAppBundleIdentifier = "com.claudiosv.pulse-vpn-menu"
     public static let teamID = "5HN43G3472"
 
@@ -42,6 +46,11 @@ public enum PrivilegedHelperConstants {
 /// bare `Error` is not a legal type inside an `@objc protocol` and would
 /// fail to compile.
 @objc public protocol PrivilegedHelperProtocol {
+    /// `PrivilegedHelperConstants.protocolVersion` as built into the helper.
+    /// The app refuses to talk to a helper that reports a different one (or
+    /// doesn't implement this at all, i.e. predates it).
+    func protocolVersion(reply: @escaping (Int) -> Void)
+
     /// Starts the session on a helper thread and returns as soon as it is
     /// running (errors only if one is already running or the log file can't
     /// be opened). Progress is reported through `logPath` (timestamped
@@ -62,25 +71,8 @@ public enum PrivilegedHelperConstants {
         reply: @escaping (NSError?) -> Void
     )
 
-    /// `state`: 0 = no session since the helper started, 1 = running,
-    /// 2 = exited (`exitCode` is libopenconnect's result: -EINTR (-4) after
-    /// stopSession, -EPERM (-1) for a rejected cookie, ...). The cert fields
-    /// are set when the session ended because the server certificate was
-    /// rejected; `certHash` is what the user would pin to trust it.
-    /// `snapshot` is a JSON-encoded `SessionSnapshot` while running (counters
-    /// as of the last `pollStats`), nil otherwise.
-    func sessionStatus(reply: @escaping (
-        _ state: Int32,
-        _ exitCode: Int32,
-        _ startedAt: Double,
-        _ certFailureReason: String?,
-        _ certHash: String?,
-        _ snapshot: Data?
-    ) -> Void)
-
-    /// Asks the session for fresh traffic counters and replies with a
-    /// JSON-encoded `SessionSnapshot` (within ~2 s). Nil if nothing is running.
-    func pollStats(reply: @escaping (Data?) -> Void)
+    /// A JSON-encoded `SessionStatus`.
+    func sessionStatus(reply: @escaping (Data) -> Void)
 
     func stopSession(reply: @escaping (NSError?) -> Void)             // ~ SIGTERM
     func requestReconnect(reply: @escaping (NSError?) -> Void)        // ~ SIGUSR2

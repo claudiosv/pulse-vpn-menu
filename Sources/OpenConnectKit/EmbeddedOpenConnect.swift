@@ -23,6 +23,8 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
     public var dropCount: UInt32
     /// Increments each time the counters below are refreshed.
     public var statsSequence: UInt64
+    /// When the counters were last refreshed (seconds since 1970).
+    public var sampledAt: Double
     public var txPackets: UInt64
     public var txBytes: UInt64
     public var rxPackets: UInt64
@@ -36,6 +38,7 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
         espEstablished = c.esp_established != 0
         dropCount = c.drop_count
         statsSequence = c.stats_seq
+        sampledAt = c.sampled_at
         txPackets = c.tx_pkts
         txBytes = c.tx_bytes
         rxPackets = c.rx_pkts
@@ -61,15 +64,20 @@ public struct OpenConnectHandlers: Sendable {
     /// Certificate failed validation and didn't match the pin; `hash` is the
     /// `pin-sha256:...` value to pass as `pinnedCert` to trust it.
     public var certRejected: @Sendable (_ reason: String, _ hash: String?) -> Void
+    /// Link state, ESP flag, drop count or tunnel identity changed (not the
+    /// counters). Fires on a libopenconnect thread; read `snapshot()`.
+    public var stateChanged: @Sendable () -> Void
 
     public init(
         log: @escaping @Sendable (Int, String) -> Void = { _, _ in },
         connected: @escaping @Sendable (OpenConnectTunnel) -> Void = { _ in },
-        certRejected: @escaping @Sendable (String, String?) -> Void = { _, _ in }
+        certRejected: @escaping @Sendable (String, String?) -> Void = { _, _ in },
+        stateChanged: @escaping @Sendable () -> Void = {}
     ) {
         self.log = log
         self.connected = connected
         self.certRejected = certRejected
+        self.stateChanged = stateChanged
     }
 }
 
@@ -78,7 +86,11 @@ public struct OpenConnectHandlers: Sendable {
 /// Callbacks fire on the session thread.
 public final class EmbeddedOpenConnect: @unchecked Sendable {
     private let handlers: OpenConnectHandlers
-    private let lock = NSLock()
+    /// Recursive on purpose: `requestReconnect()` calls into C while holding
+    /// it, and the shim reports the resulting state change straight back
+    /// through `handlers.stateChanged` on the same thread, whose handler reads
+    /// `snapshot()` — a plain lock would deadlock there.
+    private let lock = NSRecursiveLock()
     private var session: OpaquePointer?   // guarded by `lock`
     private var thread: Thread?
 
@@ -114,6 +126,10 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
             cert_rejected: { ctx, reason, hash in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
                 me.handlers.certRejected(String(cString: reason!), hash.map { String(cString: $0) })
+            },
+            state_changed: { ctx in
+                let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
+                me.handlers.stateChanged()
             })
 
         // The session thread holds a strong ref to self, so the callback
@@ -142,23 +158,16 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
     public func cancel() { withSession(ocshim_cancel) }
     public func requestReconnect() { withSession(ocshim_request_reconnect) }
 
+    /// Refreshes the counters; returns at once. The new sample shows up in
+    /// `snapshot()` (higher `statsSequence`) shortly after.
+    public func requestStats() { withSession(ocshim_request_stats) }
+
     /// Latest state without asking for new counters; nil if no session.
     public func snapshot() -> OpenConnectSnapshot? {
         withSession { session in
             var c = ocshim_snapshot()
             ocshim_get_snapshot(session, &c)
             return OpenConnectSnapshot(c)
-        }
-    }
-
-    /// Asks libopenconnect for fresh counters and waits up to `timeout`
-    /// seconds for them. `fresh` is false on timeout or if the session ended.
-    /// Blocks the caller (and any concurrent `cancel()`) for at most that long.
-    public func pollStats(timeout: TimeInterval = 2) -> (snapshot: OpenConnectSnapshot, fresh: Bool)? {
-        withSession { session in
-            var c = ocshim_snapshot()
-            let fresh = ocshim_poll_stats(session, Int32(timeout * 1000), &c) != 0
-            return (OpenConnectSnapshot(c), fresh)
         }
     }
 

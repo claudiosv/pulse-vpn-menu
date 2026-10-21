@@ -3,55 +3,43 @@ import OpenConnectKit
 import PulseVPNHelperProtocol
 
 /// The single in-process libopenconnect session this helper hosts, plus the
-/// state `sessionStatus` reports. Everything the app used to learn from a
+/// `SessionStatus` it reports. Everything the app used to learn from a
 /// subprocess (pid, exit code, log file) comes from here instead.
 final class VPNSession: @unchecked Sendable {
-    enum State: Int32 {
-        case none = 0, running = 1, exited = 2
-    }
+    /// Called (outside any lock) whenever the status the app would see has
+    /// changed — start, exit, or a link/ESP/tunnel change. Not for counters.
+    var onChange: (@Sendable () -> Void)?
 
-    struct Status {
-        var state: State
-        var exitCode: Int32
-        var startedAt: Double
-        var certFailureReason: String?
-        var certHash: String?
+    /// How often the counters are refreshed while a session runs. The app
+    /// reads them at its own pace; this just keeps them recent.
+    private static let sampleInterval: TimeInterval = 1
+
+    private struct Core {
+        var state: SessionStatus.State = .none
+        var exitCode: Int32 = 0
+        var startedAt: Date?
+        var certFailure: CertFailure?
     }
 
     private let lock = NSLock()
     private var oc: EmbeddedOpenConnect?
-    private var status = Status(state: .none, exitCode: 0, startedAt: 0)
-
-    func currentStatus() -> Status {
-        lock.withLock { status }
-    }
-
-    /// JSON-encoded `SessionSnapshot` of the running session, if any.
-    func snapshotData() -> Data? {
-        running?.snapshot().flatMap(Self.encode)
-    }
-
-    /// Like `snapshotData()` but refreshes the traffic counters first.
-    func pollStatsData() -> Data? {
-        running?.pollStats().flatMap { Self.encode($0.snapshot) }
-    }
-
-    private static func encode(_ s: OpenConnectSnapshot) -> Data? {
-        let wire = SessionSnapshot(
-            linkState: .init(s.linkState),
-            espEstablished: s.espEstablished,
-            dropCount: Int(s.dropCount),
-            statsSequence: Int(s.statsSequence),
-            txPackets: s.txPackets, txBytes: s.txBytes,
-            rxPackets: s.rxPackets, rxBytes: s.rxBytes,
-            interfaceName: s.interfaceName, address: s.address
-        )
-        return try? JSONEncoder().encode(wire)
-    }
+    private var core = Core()
+    private var sampler: DispatchSourceTimer?
 
     /// The running session, if any, for sending commands to.
     var running: EmbeddedOpenConnect? {
-        lock.withLock { status.state == .running ? oc : nil }
+        lock.withLock { core.state == .running ? oc : nil }
+    }
+
+    func currentStatus() -> SessionStatus {
+        let (core, session) = lock.withLock { (self.core, self.oc) }
+        return SessionStatus(
+            state: core.state,
+            exitCode: core.exitCode,
+            startedAt: core.startedAt,
+            certFailure: core.certFailure,
+            snapshot: core.state == .running ? session?.snapshot().map(Self.wire) : nil
+        )
     }
 
     func start(
@@ -63,7 +51,7 @@ final class VPNSession: @unchecked Sendable {
         logPath: String
     ) throws {
         let (session, queue, writer, logFile): (EmbeddedOpenConnect, DispatchQueue, TimestampingLogWriter, CappedLogFile) = try lock.withLock {
-            guard status.state != .running else { throw HelperError("A VPN session is already running") }
+            guard core.state != .running else { throw HelperError("A VPN session is already running") }
             guard let logFile = CappedLogFile(path: logPath) else {
                 throw HelperError("Could not open \(logPath) for writing")
             }
@@ -80,21 +68,26 @@ final class VPNSession: @unchecked Sendable {
             let queue = DispatchQueue(label: "com.claudiosv.pulse-vpn-menu.helper.logwriter")
             let writer = TimestampingLogWriter(logFile: logFile)
 
-            status = Status(state: .running, exitCode: 0, startedAt: Date().timeIntervalSince1970)
+            core = Core(state: .running, startedAt: Date())
             let session = EmbeddedOpenConnect(handlers: OpenConnectHandlers(
                 log: { _, line in
                     queue.async { writer.consume(Data(line.utf8)) }
                 },
                 certRejected: { [weak self] reason, hash in
                     self?.lock.withLock {
-                        self?.status.certFailureReason = reason
-                        self?.status.certHash = hash
+                        self?.core.certFailure = CertFailure(reason: reason, hash: hash)
                     }
+                },
+                stateChanged: { [weak self] in
+                    self?.onChange?()
                 }
             ))
             oc = session
             return (session, queue, writer, logFile)
         }
+
+        onChange?()
+        startSampling()
 
         // Outside the lock: if the session fails to start, the exit handler
         // below runs synchronously and takes it again.
@@ -109,12 +102,49 @@ final class VPNSession: @unchecked Sendable {
                 writer.flush()
                 logFile.close()
             }
+            self?.stopSampling()
             self?.lock.withLock {
-                self?.status.state = .exited
-                self?.status.exitCode = rc
+                self?.core.state = .exited
+                self?.core.exitCode = rc
                 self?.oc = nil
             }
+            self?.onChange?()
         }
+    }
+
+    // MARK: - Counter sampling
+
+    private func startSampling() {
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + Self.sampleInterval, repeating: Self.sampleInterval)
+        timer.setEventHandler { [weak self] in self?.running?.requestStats() }
+        lock.withLock {
+            sampler?.cancel()
+            sampler = timer
+        }
+        timer.resume()
+    }
+
+    private func stopSampling() {
+        lock.withLock {
+            sampler?.cancel()
+            sampler = nil
+        }
+    }
+
+    // MARK: - Wire format
+
+    private static func wire(_ s: OpenConnectSnapshot) -> SessionSnapshot {
+        SessionSnapshot(
+            linkState: .init(s.linkState),
+            espEstablished: s.espEstablished,
+            dropCount: Int(s.dropCount),
+            statsSequence: Int(s.statsSequence),
+            sampledAt: Date(timeIntervalSince1970: s.sampledAt),
+            txPackets: s.txPackets, txBytes: s.txBytes,
+            rxPackets: s.rxPackets, rxBytes: s.rxBytes,
+            interfaceName: s.interfaceName, address: s.address
+        )
     }
 }
 
