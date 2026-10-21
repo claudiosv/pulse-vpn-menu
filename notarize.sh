@@ -41,6 +41,19 @@ if [[ "$SIGN_AUTHORITY" != *"Developer ID Application"* ]]; then
   exit 1
 fi
 
+# Fail fast (before zipping/uploading) if the keychain profile is missing.
+if ! xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+  cat >&2 <<EOF
+✗ No usable notarytool keychain profile "$PROFILE".
+  One-time setup, with an App Store Connect API key (.p8):
+    ./notarize.sh --store-credentials <AuthKey_XXXX.p8> <key-id> <issuer-id>
+  or with an Apple ID + app-specific password:
+    xcrun notarytool store-credentials "$PROFILE" --apple-id <id> --team-id 5HN43G3472
+  To use a profile stored under another name: PULSE_NOTARY_PROFILE=<name> ./notarize.sh
+EOF
+  exit 1
+fi
+
 ZIP_PATH="$(mktemp -d)/$(basename "$APP" .app).zip"
 echo "▸ Zipping $APP for submission…"
 ditto -c -k --keepParent "$APP" "$ZIP_PATH"
