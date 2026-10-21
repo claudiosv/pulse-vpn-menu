@@ -38,7 +38,7 @@ final class AppState: ObservableObject {
     init() {
         let connectionStore = ConnectionStore()
         let appSettings = AppSettings()
-        let logStore = LogStore(appSettings: appSettings)
+        let logStore = LogStore()
         let controller = OpenConnectController(logStore: logStore, appSettings: appSettings)
         self.connectionStore = connectionStore
         self.logStore = logStore

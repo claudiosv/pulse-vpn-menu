@@ -4,7 +4,7 @@ import OpenConnectKit
 // Manual probe for the in-process libopenconnect path. Needs root to bring
 // up the tunnel:
 //   sudo .build/release/OCShimProbe <vpn-url> <cookie> [vpnc-script] [pin-sha256:...]
-// Ctrl-C cancels (clean teardown); stats are requested every 5 s.
+// Ctrl-C cancels (clean teardown); stats are polled every 5 s.
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
@@ -35,7 +35,11 @@ sigint.resume()
 
 let ticker = DispatchSource.makeTimerSource(queue: .main)
 ticker.schedule(deadline: .now() + 5, repeating: 5)
-ticker.setEventHandler { oc.requestStats() }
+ticker.setEventHandler {
+    if let r = oc.pollStats() {
+        out("[stats] link \(r.snapshot.linkState) esp \(r.snapshot.espEstablished) drops \(r.snapshot.dropCount) tx \(r.snapshot.txPackets) pkts/\(r.snapshot.txBytes) B rx \(r.snapshot.rxPackets) pkts/\(r.snapshot.rxBytes) B")
+    }
+}
 ticker.resume()
 
 DispatchQueue.global().async {

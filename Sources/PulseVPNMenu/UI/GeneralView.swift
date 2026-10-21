@@ -42,18 +42,6 @@ struct GeneralView: View {
 
                 GlassCard {
                     VStack(alignment: .leading, spacing: 8) {
-                        Toggle(isOn: $appSettings.hideRepeatedStatsLines) {
-                            Text("Hide repeated stats lines in the log")
-                                .font(.system(size: 13.5))
-                        }
-                        .toggleStyle(.switch)
-                        Text("Every stats poll re-prints the same \"Configured as…\", \"Session authentication will expire…\", \"RX/TX…\", and \"SSL ciphersuite…\" lines. When on, only the first occurrence per connection is shown; the traffic graph still updates from every poll either way.")
-                            .cardFootnote()
-                    }
-                }
-
-                GlassCard {
-                    VStack(alignment: .leading, spacing: 8) {
                         Toggle(isOn: $appSettings.notifyOnUnexpectedDisconnect) {
                             Text("Notify when the VPN disconnects unexpectedly")
                                 .font(.system(size: 13.5))

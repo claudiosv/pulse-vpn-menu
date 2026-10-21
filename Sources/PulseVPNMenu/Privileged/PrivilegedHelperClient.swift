@@ -191,23 +191,31 @@ final class PrivilegedHelperClient: @unchecked Sendable {
     func sessionStatus() async throws -> HelperSessionStatus {
         let helper = try proxy()
         return await withCheckedContinuation { continuation in
-            helper.sessionStatus { state, exitCode, startedAt, certReason, certHash in
+            helper.sessionStatus { state, exitCode, startedAt, certReason, certHash, snapshot in
                 continuation.resume(returning: HelperSessionStatus(
                     state: HelperSessionStatus.State(rawValue: state) ?? .none,
                     exitCode: exitCode,
                     startedAt: startedAt > 0 ? Date(timeIntervalSince1970: startedAt) : nil,
-                    certFailure: certReason.map { CertFailure(reason: $0, hash: certHash) }
+                    certFailure: certReason.map { CertFailure(reason: $0, hash: certHash) },
+                    snapshot: snapshot.flatMap { try? JSONDecoder().decode(SessionSnapshot.self, from: $0) }
                 ))
+            }
+        }
+    }
+
+    /// Fresh traffic counters plus link state; nil if no session is running
+    /// (or the helper is unreachable).
+    func pollStats() async -> SessionSnapshot? {
+        guard let helper = try? proxy() else { return nil }
+        return await withCheckedContinuation { continuation in
+            helper.pollStats { data in
+                continuation.resume(returning: data.flatMap { try? JSONDecoder().decode(SessionSnapshot.self, from: $0) })
             }
         }
     }
 
     func stopSession() async throws {
         try await call { helper, reply in helper.stopSession(reply: reply) }
-    }
-
-    func requestStatsUpdate() async throws {
-        try await call { helper, reply in helper.requestStatsUpdate(reply: reply) }
     }
 
     func requestReconnect() async throws {
@@ -280,6 +288,8 @@ struct HelperSessionStatus {
     var exitCode: Int32
     var startedAt: Date?
     var certFailure: CertFailure?
+    /// Link state and counters as of the last `pollStats`; nil unless running.
+    var snapshot: SessionSnapshot?
 
     var isRunning: Bool { state == .running }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import OpenConnectKit
+import PulseVPNHelperProtocol
 
 /// The single in-process libopenconnect session this helper hosts, plus the
 /// state `sessionStatus` reports. Everything the app used to learn from a
@@ -23,6 +24,28 @@ final class VPNSession: @unchecked Sendable {
 
     func currentStatus() -> Status {
         lock.withLock { status }
+    }
+
+    /// JSON-encoded `SessionSnapshot` of the running session, if any.
+    func snapshotData() -> Data? {
+        running?.snapshot().flatMap(Self.encode)
+    }
+
+    /// Like `snapshotData()` but refreshes the traffic counters first.
+    func pollStatsData() -> Data? {
+        running?.pollStats().flatMap { Self.encode($0.snapshot) }
+    }
+
+    private static func encode(_ s: OpenConnectSnapshot) -> Data? {
+        let wire = SessionSnapshot(
+            linkState: .init(s.linkState),
+            espEstablished: s.espEstablished,
+            dropCount: Int(s.dropCount),
+            statsSequence: Int(s.statsSequence),
+            txPackets: s.txPackets, txBytes: s.txBytes,
+            rxPackets: s.rxPackets, rxBytes: s.rxBytes
+        )
+        return try? JSONEncoder().encode(wire)
     }
 
     /// The running session, if any, for sending commands to.
@@ -96,4 +119,14 @@ struct HelperError: Error, LocalizedError {
     let message: String
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
+}
+
+private extension SessionSnapshot.LinkState {
+    init(_ s: OpenConnectSnapshot.LinkState) {
+        switch s {
+        case .connecting: self = .connecting
+        case .up: self = .up
+        case .reconnecting: self = .reconnecting
+        }
+    }
 }

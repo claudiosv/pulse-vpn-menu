@@ -65,16 +65,22 @@ public enum PrivilegedHelperConstants {
     /// stopSession, -EPERM (-1) for a rejected cookie, ...). The cert fields
     /// are set when the session ended because the server certificate was
     /// rejected; `certHash` is what the user would pin to trust it.
+    /// `snapshot` is a JSON-encoded `SessionSnapshot` while running (counters
+    /// as of the last `pollStats`), nil otherwise.
     func sessionStatus(reply: @escaping (
         _ state: Int32,
         _ exitCode: Int32,
         _ startedAt: Double,
         _ certFailureReason: String?,
-        _ certHash: String?
+        _ certHash: String?,
+        _ snapshot: Data?
     ) -> Void)
 
+    /// Asks the session for fresh traffic counters and replies with a
+    /// JSON-encoded `SessionSnapshot` (within ~2 s). Nil if nothing is running.
+    func pollStats(reply: @escaping (Data?) -> Void)
+
     func stopSession(reply: @escaping (NSError?) -> Void)             // ~ SIGTERM
-    func requestStatsUpdate(reply: @escaping (NSError?) -> Void)      // ~ SIGUSR1
     func requestReconnect(reply: @escaping (NSError?) -> Void)        // ~ SIGUSR2
 
     func setDefaultRoute(gatewayIP: String, reply: @escaping (NSError?) -> Void)     // route change default <ip>

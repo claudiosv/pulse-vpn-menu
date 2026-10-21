@@ -1,6 +1,7 @@
 import Foundation
+import PulseVPNHelperProtocol
 
-/// One SIGUSR1 sample. Byte/packet counters are cumulative for the session.
+/// One stats sample. Byte/packet counters are cumulative for the session.
 /// Mirrors Python's `stats.py`'s `VpnStats`.
 struct VpnStats: Equatable {
     var timestamp: Date
@@ -10,76 +11,36 @@ struct VpnStats: Equatable {
     var txBytes: Int
 }
 
-/// Parses openconnect's SIGUSR1 stats-dump lines and keeps a rolling
-/// history, mirroring `stats.py`'s `StatsHistory`. Not actor/lock-guarded
-/// like the Python version since it's only ever touched on the main actor
-/// here (see `OpenConnectController`).
+/// Rolling history of the helper's traffic-counter samples, mirroring
+/// `stats.py`'s `StatsHistory`. Not actor/lock-guarded like the Python
+/// version since it's only ever touched on the main actor here (see
+/// `OpenConnectController`).
 @MainActor
 final class StatsHistory: ObservableObject {
     @Published private(set) var samples: [VpnStats] = []
-    @Published private(set) var tunnelIP: String?
-    @Published private(set) var tunnelStatus: String?
-    @Published private(set) var sessionExpiry: String?
-    @Published private(set) var sslCiphersuite: String?
 
     private let maxSamples = 4096
 
     var current: VpnStats? { samples.last }
 
-    /// Parses one line of openconnect output. Returns true if it was a
-    /// recognized stats/session line (and was recorded), false otherwise.
-    /// Regexes live on `StatsLineClassifier`, shared with `LogStore`'s
-    /// repeated-line filtering, so the two stay in sync on what counts as
-    /// "one of these lines."
-    @discardableResult
-    func ingest(_ line: String) -> Bool {
-        let range = NSRange(line.startIndex..., in: line)
-
-        if let match = StatsLineClassifier.rxTxRegex.firstMatch(in: line, range: range),
-           let rxPackets = Int(capture(match, 1, in: line) ?? ""),
-           let rxBytes = Int(capture(match, 2, in: line) ?? ""),
-           let txPackets = Int(capture(match, 3, in: line) ?? ""),
-           let txBytes = Int(capture(match, 4, in: line) ?? "") {
-            let sample = VpnStats(timestamp: Date(), rxPackets: rxPackets, rxBytes: rxBytes, txPackets: txPackets, txBytes: txBytes)
-            samples.append(sample)
-            if samples.count > maxSamples {
-                samples.removeFirst(samples.count - maxSamples)
-            }
-            return true
+    /// Records the counters from a fresh `SessionSnapshot`.
+    func append(_ snapshot: SessionSnapshot) {
+        samples.append(VpnStats(
+            timestamp: Date(),
+            rxPackets: Int(clamping: snapshot.rxPackets),
+            rxBytes: Int(clamping: snapshot.rxBytes),
+            txPackets: Int(clamping: snapshot.txPackets),
+            txBytes: Int(clamping: snapshot.txBytes)
+        ))
+        if samples.count > maxSamples {
+            samples.removeFirst(samples.count - maxSamples)
         }
-
-        if let match = StatsLineClassifier.configuredRegex.firstMatch(in: line, range: range) {
-            tunnelIP = capture(match, 1, in: line)
-            tunnelStatus = capture(match, 2, in: line)?.trimmingCharacters(in: .whitespaces)
-            return true
-        }
-
-        if let match = StatsLineClassifier.expiryRegex.firstMatch(in: line, range: range) {
-            sessionExpiry = capture(match, 1, in: line)?.trimmingCharacters(in: .whitespaces)
-            return true
-        }
-
-        if let match = StatsLineClassifier.ciphersuiteRegex.firstMatch(in: line, range: range) {
-            sslCiphersuite = capture(match, 1, in: line)?.trimmingCharacters(in: .whitespaces)
-            return true
-        }
-
-        return false
     }
 
     /// Resets for a new session (counters restart from zero with each new
-    /// openconnect process).
+    /// connection).
     func clear() {
         samples.removeAll()
-        tunnelIP = nil
-        tunnelStatus = nil
-        sessionExpiry = nil
-        sslCiphersuite = nil
-    }
-
-    private func capture(_ match: NSTextCheckingResult, _ index: Int, in line: String) -> String? {
-        guard let range = Range(match.range(at: index), in: line) else { return nil }
-        return String(line[range])
     }
 
     /// Derives an instantaneous throughput series (bytes/sec) from the

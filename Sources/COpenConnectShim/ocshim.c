@@ -1,13 +1,13 @@
 #include "ocshim.h"
 
 #include <errno.h>
-#include <inttypes.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -18,9 +18,14 @@ struct ocshim {
     void *ctx;
     struct openconnect_info *vpninfo;
     const char *pinned_cert;     /* borrowed from ocshim_run's caller */
+
     pthread_mutex_t cmd_lock;    /* serializes command writes with fd teardown */
     int cmd_fd;                  /* -1 until ocshim_run() has set up the pipe */
-    int esp_established;         /* only touched on the mainloop thread */
+
+    pthread_mutex_t mu;          /* guards snap and done */
+    pthread_cond_t cv;           /* signalled on a new sample and on exit */
+    ocshim_snapshot snap;
+    int done;
 };
 
 static void emit(struct ocshim *s, int level, const char *msg)
@@ -43,6 +48,39 @@ static void emitf(struct ocshim *s, int level, const char *fmt, ...)
     emit(s, level, buf);
 }
 
+/* libopenconnect doesn't expose DTLS/ESP state or "a reconnect has begun" as
+ * callbacks, so the two transitions it only reports in text are recognised
+ * here, once, and turned into typed state. (The TCP-reconnected callback
+ * below covers the other direction without any text.) */
+static const char *const drop_markers[] = {
+    "detected dead peer",
+    "server closed connection",
+    "failed to reconnect to host",
+    "remaining timeout",
+};
+
+static void note_progress(struct ocshim *s, const char *msg)
+{
+    size_t i;
+
+    pthread_mutex_lock(&s->mu);
+    if (strstr(msg, "ESP session established")) {
+        s->snap.esp_established = 1;
+        if (s->snap.link_state == OCSHIM_LINK_RECONNECTING)
+            s->snap.link_state = OCSHIM_LINK_UP;
+    } else if (s->snap.link_state == OCSHIM_LINK_UP) {
+        for (i = 0; i < sizeof(drop_markers) / sizeof(drop_markers[0]); i++) {
+            if (strcasestr(msg, drop_markers[i])) {
+                /* One drop per episode, however many retry lines follow. */
+                s->snap.link_state = OCSHIM_LINK_RECONNECTING;
+                s->snap.drop_count++;
+                break;
+            }
+        }
+    }
+    pthread_mutex_unlock(&s->mu);
+}
+
 static void progress(void *priv, int level, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
 
@@ -55,9 +93,19 @@ static void progress(void *priv, int level, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    if (strstr(buf, "ESP session established"))
-        s->esp_established = 1;
+    note_progress(s, buf);
     emit(s, level, buf);
+}
+
+/* TCP connection re-established after a drop. */
+static void reconnected(void *priv)
+{
+    struct ocshim *s = priv;
+
+    pthread_mutex_lock(&s->mu);
+    if (s->snap.link_state == OCSHIM_LINK_RECONNECTING)
+        s->snap.link_state = OCSHIM_LINK_UP;
+    pthread_mutex_unlock(&s->mu);
 }
 
 /* A certificate that fails normal validation is accepted only if it matches
@@ -93,49 +141,19 @@ static int process_auth_form(void *priv, struct oc_auth_form *form)
     return -1;
 }
 
-/* Same text as openconnect's print_connection_info(); the DTLS/ESP state is
- * inferred from the "ESP session established" log line, since the library
- * doesn't expose its dtls_state. */
-static void print_connection_info(struct ocshim *s)
-{
-    const struct oc_ip_info *ip;
-    const char *ssl_compr, *udp_compr;
-    time_t exp;
-
-    if (openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) < 0)
-        return;
-    ssl_compr = openconnect_get_cstp_compression(s->vpninfo);
-    udp_compr = openconnect_get_dtls_compression(s->vpninfo);
-    emitf(s, PRG_INFO, "Configured as %s%s%s, with SSL%s%s connected and ESP%s%s %s\n",
-          ip->addr ? ip->addr : "",
-          ((ip->netmask6 || ip->addr6) && ip->addr) ? " + " : "",
-          ip->netmask6 ? ip->netmask6 : (ip->addr6 ? ip->addr6 : ""),
-          ssl_compr ? " + " : "", ssl_compr ? ssl_compr : "",
-          udp_compr ? " + " : "", udp_compr ? udp_compr : "",
-          s->esp_established ? "established" : "in progress");
-
-    exp = openconnect_get_auth_expiration(s->vpninfo);
-    if (exp != 0) {
-        char buf[80];
-        struct tm tm;
-
-        localtime_r(&exp, &tm);
-        strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S %Z", &tm);
-        emitf(s, PRG_INFO, "Session authentication will expire at %s\n", buf);
-    }
-}
-
+/* Runs on the mainloop thread in response to OC_CMD_STATS. */
 static void stats_handler(void *priv, const struct oc_stats *st)
 {
     struct ocshim *s = priv;
-    const char *cipher;
 
-    print_connection_info(s);
-    emitf(s, PRG_INFO, "RX: %" PRIu64 " packets (%" PRIu64 " B); TX: %" PRIu64 " packets (%" PRIu64 " B)\n",
-          st->rx_pkts, st->rx_bytes, st->tx_pkts, st->tx_bytes);
-    cipher = openconnect_get_cstp_cipher(s->vpninfo);
-    if (cipher)
-        emitf(s, PRG_INFO, "SSL ciphersuite: %s\n", cipher);
+    pthread_mutex_lock(&s->mu);
+    s->snap.tx_pkts = st->tx_pkts;
+    s->snap.tx_bytes = st->tx_bytes;
+    s->snap.rx_pkts = st->rx_pkts;
+    s->snap.rx_bytes = st->rx_bytes;
+    s->snap.stats_seq++;
+    pthread_cond_broadcast(&s->cv);
+    pthread_mutex_unlock(&s->mu);
 }
 
 ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
@@ -147,6 +165,8 @@ ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
     s->cb = *cb;
     s->ctx = ctx;
     pthread_mutex_init(&s->cmd_lock, NULL);
+    pthread_mutex_init(&s->mu, NULL);
+    pthread_cond_init(&s->cv, NULL);
     s->cmd_fd = -1;
     signal(SIGPIPE, SIG_IGN); /* process-wide, like openconnect's main() */
     return s;
@@ -158,9 +178,15 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
 {
     int ret, fd;
     const struct oc_ip_info *ip;
+    time_t exp;
 
     s->pinned_cert = pinned_cert;
-    s->esp_established = 0;
+    pthread_mutex_lock(&s->mu);
+    memset(&s->snap, 0, sizeof(s->snap));
+    s->snap.link_state = OCSHIM_LINK_CONNECTING;
+    s->done = 0;
+    pthread_mutex_unlock(&s->mu);
+
     s->vpninfo = openconnect_vpninfo_new(
         "AnyConnect-compatible OpenConnect VPN Agent",
         validate_peer_cert, write_new_config, process_auth_form, progress, s);
@@ -178,6 +204,7 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
     if (dpd_seconds > 0)
         openconnect_set_dpd(s->vpninfo, dpd_seconds);
     openconnect_set_stats_handler(s->vpninfo, stats_handler);
+    openconnect_set_reconnected_handler(s->vpninfo, reconnected);
 
     fd = openconnect_setup_cmd_pipe(s->vpninfo);
     if (fd < 0) {
@@ -201,10 +228,27 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
         goto out;
     }
 
+    pthread_mutex_lock(&s->mu);
+    s->snap.link_state = OCSHIM_LINK_UP;
+    pthread_mutex_unlock(&s->mu);
+
     if (openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) >= 0) {
+        emitf(s, PRG_INFO, "Tunnel up: %s%s%s, MTU %d\n",
+              ip->addr ? ip->addr : "",
+              (ip->addr && ip->addr6) ? " + " : "",
+              ip->addr6 ? ip->addr6 : "",
+              ip->mtu);
         if (s->cb.connected)
             s->cb.connected(s->ctx, ip->addr, ip->netmask, ip->gateway_addr, ip->mtu);
-        print_connection_info(s);
+    }
+    exp = openconnect_get_auth_expiration(s->vpninfo);
+    if (exp != 0) {
+        char buf[80];
+        struct tm tm;
+
+        localtime_r(&exp, &tm);
+        strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S %Z", &tm);
+        emitf(s, PRG_INFO, "Session authentication will expire at %s\n", buf);
     }
 
     if (openconnect_setup_dtls(s->vpninfo, 60))
@@ -240,6 +284,12 @@ out:
     pthread_mutex_unlock(&s->cmd_lock);
     openconnect_vpninfo_free(s->vpninfo); /* also closes the command pipe */
     s->vpninfo = NULL;
+
+    /* Wake any ocshim_poll_stats() still waiting for a sample. */
+    pthread_mutex_lock(&s->mu);
+    s->done = 1;
+    pthread_cond_broadcast(&s->cv);
+    pthread_mutex_unlock(&s->mu);
     return ret;
 }
 
@@ -252,12 +302,63 @@ static void send_cmd(struct ocshim *s, char cmd)
     pthread_mutex_unlock(&s->cmd_lock);
 }
 
-void ocshim_cancel(ocshim_t *s)            { send_cmd(s, OC_CMD_CANCEL); }
-void ocshim_request_stats(ocshim_t *s)     { send_cmd(s, OC_CMD_STATS); }
-void ocshim_request_reconnect(ocshim_t *s) { send_cmd(s, OC_CMD_PAUSE); }
+void ocshim_cancel(ocshim_t *s)
+{
+    send_cmd(s, OC_CMD_CANCEL);
+}
+
+void ocshim_request_reconnect(ocshim_t *s)
+{
+    /* Cleared first so a waiter can't see the old session's value: the new
+     * "ESP session established" line may arrive any time after PAUSE. */
+    pthread_mutex_lock(&s->mu);
+    s->snap.esp_established = 0;
+    pthread_mutex_unlock(&s->mu);
+    send_cmd(s, OC_CMD_PAUSE);
+}
+
+void ocshim_get_snapshot(ocshim_t *s, ocshim_snapshot *out)
+{
+    pthread_mutex_lock(&s->mu);
+    *out = s->snap;
+    pthread_mutex_unlock(&s->mu);
+}
+
+int ocshim_poll_stats(ocshim_t *s, int timeout_ms, ocshim_snapshot *out)
+{
+    struct timespec deadline;
+    uint64_t before;
+    int fresh;
+
+    pthread_mutex_lock(&s->mu);
+    before = s->snap.stats_seq;
+    pthread_mutex_unlock(&s->mu);
+
+    send_cmd(s, OC_CMD_STATS);
+
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000L;
+    }
+
+    pthread_mutex_lock(&s->mu);
+    while (s->snap.stats_seq == before && !s->done) {
+        if (pthread_cond_timedwait(&s->cv, &s->mu, &deadline) == ETIMEDOUT)
+            break;
+    }
+    fresh = s->snap.stats_seq != before;
+    *out = s->snap;
+    pthread_mutex_unlock(&s->mu);
+    return fresh;
+}
 
 void ocshim_free(ocshim_t *s)
 {
+    pthread_cond_destroy(&s->cv);
+    pthread_mutex_destroy(&s->mu);
     pthread_mutex_destroy(&s->cmd_lock);
     free(s);
 }

@@ -21,20 +21,6 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
-    /// Every SIGUSR1 stats poll makes openconnect re-print the same four
-    /// lines (`Configured as ...`, `Session authentication will expire
-    /// at ...`, `RX: ... TX: ...`, `SSL ciphersuite: ...`) with fresh
-    /// values, which floods the Logs window over a long-running
-    /// connection. When on, `LogStore` shows only the first occurrence of
-    /// each per connection (still re-shown after a relaunch/reattach or a
-    /// fresh connect) and hides the repeats — the underlying stats are
-    /// still parsed and graphed either way, this only affects what's
-    /// displayed. Defaults to `true`: the repeats are rarely useful and
-    /// this is the behavior actually being asked for.
-    @Published var hideRepeatedStatsLines: Bool {
-        didSet { save() }
-    }
-
     /// Post a macOS notification when openconnect exits without the user
     /// having asked for it (session expiry, `--reconnect-timeout` running
     /// out, a crash, an outside `kill`). Defaults to `true`: silently
@@ -54,7 +40,6 @@ final class AppSettings: ObservableObject {
     private struct Document: Codable {
         var statsPollInterval: TimeInterval
         var disconnectOnQuit: Bool
-        var hideRepeatedStatsLines: Bool?
         var notifyOnUnexpectedDisconnect: Bool?
         var notifyOnTransientDrops: Bool?
     }
@@ -64,13 +49,11 @@ final class AppSettings: ObservableObject {
            let document = try? JSONDecoder().decode(Document.self, from: data) {
             statsPollInterval = document.statsPollInterval
             disconnectOnQuit = document.disconnectOnQuit
-            hideRepeatedStatsLines = document.hideRepeatedStatsLines ?? true
             notifyOnUnexpectedDisconnect = document.notifyOnUnexpectedDisconnect ?? true
             notifyOnTransientDrops = document.notifyOnTransientDrops ?? false
         } else {
             statsPollInterval = Self.defaultStatsPollInterval
             disconnectOnQuit = false
-            hideRepeatedStatsLines = true
             notifyOnUnexpectedDisconnect = true
             notifyOnTransientDrops = false
         }
@@ -80,7 +63,6 @@ final class AppSettings: ObservableObject {
         let document = Document(
             statsPollInterval: statsPollInterval,
             disconnectOnQuit: disconnectOnQuit,
-            hideRepeatedStatsLines: hideRepeatedStatsLines,
             notifyOnUnexpectedDisconnect: notifyOnUnexpectedDisconnect,
             notifyOnTransientDrops: notifyOnTransientDrops
         )

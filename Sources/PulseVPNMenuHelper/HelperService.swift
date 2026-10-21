@@ -32,17 +32,17 @@ final class HelperService: NSObject, PrivilegedHelperProtocol {
         }
     }
 
-    func sessionStatus(reply: @escaping (Int32, Int32, Double, String?, String?) -> Void) {
+    func sessionStatus(reply: @escaping (Int32, Int32, Double, String?, String?, Data?) -> Void) {
         let s = session.currentStatus()
-        reply(s.state.rawValue, s.exitCode, s.startedAt, s.certFailureReason, s.certHash)
+        reply(s.state.rawValue, s.exitCode, s.startedAt, s.certFailureReason, s.certHash, session.snapshotData())
+    }
+
+    func pollStats(reply: @escaping (Data?) -> Void) {
+        reply(session.pollStatsData())
     }
 
     func stopSession(reply: @escaping (NSError?) -> Void) {
         command(reply) { $0.cancel() }
-    }
-
-    func requestStatsUpdate(reply: @escaping (NSError?) -> Void) {
-        command(reply) { $0.requestStats() }
     }
 
     func requestReconnect(reply: @escaping (NSError?) -> Void) {

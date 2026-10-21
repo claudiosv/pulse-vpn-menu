@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Darwin
+import PulseVPNHelperProtocol
 import ServiceManagement
 
 enum ConnectExitOutcome {
@@ -34,8 +35,8 @@ enum ConnectError: Error, CustomStringConvertible {
 /// `DSIDAuthenticator`), starts the VPN session in the privileged helper
 /// daemon (`PrivilegedHelperClient`; libopenconnect runs in-process there,
 /// as root), waits for the tunnel interface
-/// to come up, manages routes (`RouteManager`), and delivers signals for
-/// stop/reconnect/stats.
+/// to come up, manages routes (`RouteManager`), and relays
+/// stop/reconnect/stats requests to the helper.
 @MainActor
 final class OpenConnectController: ObservableObject {
     @Published private(set) var isBusy = false
@@ -51,30 +52,23 @@ final class OpenConnectController: ObservableObject {
     private var statsTimerTask: Task<Void, Never>?
     private var runtimeState: RuntimeState?
 
-    /// Set once openconnect's own "ESP session established with server" line
-    /// appears in the log for the current connection attempt. The interface
-    /// coming up (`Configured as <ip>, with SSL connected and ESP in
-    /// progress`) happens first and is not sufficient on its own — the ESP
-    /// negotiation can still fail or hang after that point — so
+    /// Mirrors the session's `espEstablished` flag, refreshed from each
+    /// helper snapshot. The interface coming up is not sufficient on its own
+    /// — the ESP negotiation can still fail or hang after that point — so
     /// `connectOnce` gates declaring `.up` on this flag as well, not just on
     /// the interface existing.
     private var espEstablished = false
 
-    /// Set when openconnect logs that it lost the link but is retrying on
-    /// its own (the process stays alive — see `transientDropMarkers`), and
-    /// cleared once ESP is re-established. Only one "dropped" notification
-    /// is posted per episode, however many retry lines follow.
+    /// Set while the helper reports the link as lost and libopenconnect is
+    /// retrying on its own, cleared once the link is back up. Only one
+    /// "dropped" notification is posted per episode.
     private var inTransientDrop = false
 
-    /// openconnect's own messages for "the link went away, retrying within
-    /// `--reconnect-timeout`" (DPD timeouts, the server closing the
-    /// session, `ssl_reconnect`'s backoff lines). Matched case-insensitively.
-    private static let transientDropMarkers = [
-        "detected dead peer",
-        "server closed connection",
-        "failed to reconnect to host",
-        "remaining timeout",
-    ]
+    /// Baselines for noticing change between helper snapshots: the last
+    /// counter sample recorded, and the drop count already handled. Both
+    /// restart at 0 with each new session.
+    private var lastStatsSequence = 0
+    private var lastDropCount = 0
 
     /// Looks up a profile's display name for notifications — set by
     /// `AppState`, which owns the `ConnectionStore` this controller
@@ -86,19 +80,6 @@ final class OpenConnectController: ObservableObject {
     init(logStore: LogStore, appSettings: AppSettings) {
         self.logStore = logStore
         self.appSettings = appSettings
-        logStore.onLine = { [weak self] line in
-            self?.stats.ingest(line)
-            if line.contains("ESP session established with server") {
-                self?.espEstablished = true
-                self?.transientDropEnded()
-            } else {
-                let lowered = line.lowercased()
-                if Self.transientDropMarkers.contains(where: { lowered.contains($0) }) {
-                    self?.transientDropStarted()
-                }
-            }
-        }
-
         // A session lives in the helper and outlives the app: if we recorded
         // one, ask the helper whether it's still up and reattach. (Only when
         // the helper is already approved — launch must not trigger a
@@ -114,10 +95,9 @@ final class OpenConnectController: ObservableObject {
 
     /// The helper reporting a running session isn't proof the tunnel is
     /// actually up — it can be wedged or mid-reconnect. Rather than flipping
-    /// straight to "connected", request a stats update and wait for a real
-    /// sample to come back (`StatsHistory` only grows once a genuine stats
-    /// line is parsed from the log) before setting `runtimeState`, which is
-    /// what `isConnected()` reports on. `isBusy` is held during the check so
+    /// straight to "connected", ask it for fresh counters and wait for a real
+    /// sample to come back before setting `runtimeState`, which is what
+    /// `isConnected()` reports on. `isBusy` is held during the check so
     /// the UI reads "working…" instead of flashing "disconnected".
     private func verifyAndReattach(state: RuntimeState) {
         isBusy = true
@@ -138,20 +118,23 @@ final class OpenConnectController: ObservableObject {
                 return
             }
 
-            let sampleCountBefore = self.stats.samples.count
-            try? await PrivilegedHelperClient.shared.requestStatsUpdate()
-
-            let deadline = Date().addingTimeInterval(5)
-            while Date() < deadline {
-                if self.stats.samples.count > sampleCountBefore { break }
-                try? await Task.sleep(for: .milliseconds(200))
+            // pollStats waits up to ~2 s for the sample itself.
+            var confirmed: SessionSnapshot?
+            for _ in 0..<3 {
+                if let snap = await PrivilegedHelperClient.shared.pollStats(), snap.statsSequence > 0 {
+                    confirmed = snap
+                    break
+                }
             }
-
-            guard self.stats.samples.count > sampleCountBefore else {
+            guard let snapshot = confirmed else {
                 self.logStore.append("Could not confirm the existing VPN session is responding; not reattaching.\n")
                 RuntimeState.clear()
                 return
             }
+            // Drops that happened before we got here aren't news.
+            self.lastDropCount = snapshot.dropCount
+            self.lastStatsSequence = 0
+            self.apply(snapshot, recordSample: true)
 
             self.runtimeState = state
             self.connectedProfileID = state.profileID
@@ -290,6 +273,8 @@ final class OpenConnectController: ObservableObject {
         stats.clear()
         espEstablished = false
         inTransientDrop = false
+        lastStatsSequence = 0
+        lastDropCount = 0
 
         let script = profile.script.flatMap { $0.isEmpty ? nil : $0 } ?? Self.bundledVPNCScriptPath
         try await PrivilegedHelperClient.shared.startSession(
@@ -326,6 +311,7 @@ final class OpenConnectController: ObservableObject {
                 return ConnectAttemptResult(outcome: .failed(status.exitCode), dsidUsed: dsidValue)
             }
 
+            espEstablished = status.snapshot?.espEstablished ?? false
             if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
                 state.vpnGatewayIP = ip
                 state.save()
@@ -397,7 +383,8 @@ final class OpenConnectController: ObservableObject {
 
         let deadline = Date().addingTimeInterval(Self.tunnelTimeout)
         while Date() < deadline {
-            if !(await sessionIsRunning()) {
+            let status = try? await PrivilegedHelperClient.shared.sessionStatus()
+            if !(status?.isRunning ?? false) {
                 logStore.append("Reconnect failed: the VPN session ended.\n")
                 // The user asked for a reconnect, not a disconnect — losing
                 // the tunnel here is just as unrequested as below.
@@ -406,6 +393,7 @@ final class OpenConnectController: ObservableObject {
                 return
             }
 
+            espEstablished = status?.snapshot?.espEstablished ?? false
             if espEstablished, let (_, ip) = NetworkInterfaces.findVPNInterface() {
                 var updated = state
                 updated.vpnGatewayIP = ip
@@ -434,8 +422,11 @@ final class OpenConnectController: ObservableObject {
         guard !isBusy, runtimeState != nil else { return }
         // If the helper can't be reached, say nothing: that's not evidence
         // the tunnel is gone.
-        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus(),
-              !status.isRunning else { return }
+        guard let status = try? await PrivilegedHelperClient.shared.sessionStatus() else { return }
+        if status.isRunning {
+            if let snapshot = status.snapshot { apply(snapshot, recordSample: false) }
+            return
+        }
         // Re-check after the await: a user action may have started meanwhile.
         guard !isBusy, let state = runtimeState else { return }
         isBusy = true
@@ -486,6 +477,26 @@ final class OpenConnectController: ObservableObject {
         Notifier.shared.post(.lost, title: "VPN disconnected", body: "\(profileLabel(state)): \(reason)")
     }
 
+    /// Folds a helper snapshot into app state: the ESP flag, drop/restore
+    /// transitions (with their notifications), and — only for snapshots
+    /// from `pollStats`, whose counters are fresh — a new traffic sample.
+    private func apply(_ snapshot: SessionSnapshot, recordSample: Bool) {
+        espEstablished = snapshot.espEstablished
+
+        if recordSample, snapshot.statsSequence > 0, snapshot.statsSequence != lastStatsSequence {
+            lastStatsSequence = snapshot.statsSequence
+            stats.append(snapshot)
+        }
+
+        if snapshot.dropCount > lastDropCount {
+            lastDropCount = snapshot.dropCount
+            transientDropStarted()
+        }
+        if snapshot.linkState == .up {
+            transientDropEnded()
+        }
+    }
+
     private func transientDropStarted() {
         guard let state = runtimeState, !isBusy, !inTransientDrop else { return }
         inTransientDrop = true
@@ -512,11 +523,11 @@ final class OpenConnectController: ObservableObject {
         stopStatsTimer()
         statsTimerTask = Task { [weak self] in
             guard let self else { return }
-            // Request one immediately rather than waiting out the first
+            // Poll once immediately rather than waiting out the first
             // interval — the caller just confirmed (or established) the
             // tunnel, so there's no reason to sit without stats for up to
             // a full poll interval before the first sample appears.
-            try? await PrivilegedHelperClient.shared.requestStatsUpdate()
+            await self.pollStatsNow()
             while !Task.isCancelled {
                 // Re-read on every iteration (rather than capturing once)
                 // so a change made in Settings while connected takes
@@ -525,9 +536,14 @@ final class OpenConnectController: ObservableObject {
                 try? await Task.sleep(for: .seconds(interval))
                 if Task.isCancelled { break }
                 guard self.isConnected() else { break }
-                try? await PrivilegedHelperClient.shared.requestStatsUpdate()
+                await self.pollStatsNow()
             }
         }
+    }
+
+    private func pollStatsNow() async {
+        guard let snapshot = await PrivilegedHelperClient.shared.pollStats() else { return }
+        apply(snapshot, recordSample: true)
     }
 
     private func stopStatsTimer() {
