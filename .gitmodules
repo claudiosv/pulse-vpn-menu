@@ -1,0 +1,10 @@
+[submodule "third_party/openssl"]
+	path = third_party/openssl
+	url = https://github.com/openssl/openssl.git
+	shallow = true
+[submodule "third_party/openconnect"]
+	path = third_party/openconnect
+	url = https://gitlab.com/openconnect/openconnect.git
+[submodule "third_party/vpnc-scripts"]
+	path = third_party/vpnc-scripts
+	url = https://gitlab.com/openconnect/vpnc-scripts.git

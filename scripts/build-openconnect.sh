@@ -1,92 +1,97 @@
 #!/usr/bin/env bash
-# Build openconnect from its upstream repo into vendor/openconnect/
-# (bin/openconnect + vpnc-script), for build.sh to bundle into the app.
+# Build OpenSSL and libopenconnect (plus the openconnect CLI) from the git
+# submodules in third_party/ into vendor/openconnect/, for build.sh to link
+# into the helper and bundle.
 #
-# Usage: scripts/build-openconnect.sh [REF]
-#   REF is a branch, tag, or commit sha (default: master), e.g. v9.21 or
-#   70d1e79d. Also settable as OC_REF.
+#   third_party/openssl        OpenSSL (a release tag)
+#   third_party/openconnect    libopenconnect
+#   third_party/vpnc-scripts   the vpnc-script bundled in the app
+#
+# The pin for each is the commit the submodule points at, so a version bump
+# is an ordinary reviewable diff:
+#   git -C third_party/openconnect fetch --tags
+#   git -C third_party/openconnect checkout v9.22     # or a sha
+#   git add third_party/openconnect
+# scripts/check-updates.sh reports what is newer upstream.
+#
+# Usage: scripts/build-openconnect.sh
 #   OC_ARCHS="arm64 x86_64" builds a universal binary (default: host arch).
 #
 # The result links OpenSSL statically and otherwise only uses system libs
-# (libz, libxml2, libSystem), so it runs on any Mac without Homebrew.
-# OpenSSL is built from a pinned tarball too (pinned version, and a CA path
-# that matches macOS: /etc/ssl/cert.pem).
-# Build-time deps: `brew install autoconf automake libtool`.
+# (libz, libxml2, libSystem), so it runs on any Mac without Homebrew. OpenSSL
+# is configured with a CA path that matches macOS: /etc/ssl/cert.pem.
+# Build-time deps: `brew install autoconf automake libtool` (and perl, which
+# macOS ships).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-OC_REPO="https://gitlab.com/openconnect/openconnect.git"
-OC_REF="${1:-${OC_REF:-master}}"
-# vpnc-scripts has no releases; pin a commit.
-VPNC_COMMIT="ce9e961bd0f6b867e1c7c35f78f6fb973f6ff101"
-VPNC_SHA256="f0c4d936a382f07711263242699b5e2d85d1ace37136bb78785d352997c17742"
-VPNC_URL="https://gitlab.com/openconnect/vpnc-scripts/-/raw/${VPNC_COMMIT}/vpnc-script"
-
-OPENSSL_VERSION="3.5.9"
-OPENSSL_SHA256="603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"  # from the upstream .sha256 asset
-OPENSSL_URL="https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+OPENSSL_SRC="$PWD/third_party/openssl"
+OC_SRC="$PWD/third_party/openconnect"
+VPNC_SRC="$PWD/third_party/vpnc-scripts"
 
 OUT="$PWD/vendor/openconnect"
 CACHE="$PWD/vendor/.cache"
-REPO="$CACHE/openconnect-src"
 ARCHS="${OC_ARCHS:-$(uname -m)}"
 
-mkdir -p "$CACHE"
-if [[ -d "$REPO/.git" ]]; then
-    git -C "$REPO" fetch -q --tags --force origin '+refs/heads/*:refs/remotes/origin/*'
-else
-    git clone -q "$OC_REPO" "$REPO"
-fi
-# Branch names resolve via origin/ so "master" tracks upstream, not a stale local branch.
-SHA="$(git -C "$REPO" rev-parse --verify -q "origin/${OC_REF}^{commit}" \
-    || git -C "$REPO" rev-parse --verify -q "${OC_REF}^{commit}")" \
-    || { echo "unknown openconnect ref: ${OC_REF}" >&2; exit 1; }
-STAMP="$SHA openssl-$OPENSSL_VERSION+etcssl+macos27 $ARCHS"
+# A fresh clone without --recurse-submodules has these empty. Only missing
+# ones are initialised: `submodule update` would reset a pin you've just
+# checked out to try. (Not --recursive: OpenSSL's own submodules are test
+# corpora we don't need.)
+for dep in openssl openconnect vpnc-scripts; do
+    [[ -e third_party/$dep/.git ]] || git submodule update --init third_party/$dep
+done
+
+pinned() { git -C "$1" rev-parse HEAD; }
+OPENSSL_SHA="$(pinned "$OPENSSL_SRC")"
+OC_SHA="$(pinned "$OC_SRC")"
+VPNC_SHA="$(pinned "$VPNC_SRC")"
+
+# Building from a modified submodule is allowed (it's how you try a patch),
+# but never treated as cached.
+dirty=""
+for dep in "$OPENSSL_SRC" "$OC_SRC" "$VPNC_SRC"; do
+    if [[ -n "$(git -C "$dep" status --porcelain)" ]]; then
+        echo "warning: ${dep#"$PWD/"} has local changes; building with them" >&2
+        dirty="+dirty-$(date +%s)"
+    fi
+done
+STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12} vpnc-scripts@${VPNC_SHA:0:12}+etcssl+macos27$dirty $ARCHS"
 
 if [[ -x "$OUT/bin/openconnect" && -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
-    echo "==> openconnect ${OC_REF} (${SHA:0:10}) already built"
+    echo "==> libopenconnect ($(git -C "$OC_SRC" describe --tags)) already built"
     exit 0
 fi
 
-if [[ ! -f "$CACHE/vpnc-script" ]]; then
-    curl -fsSL "$VPNC_URL" -o "$CACHE/vpnc-script"
-fi
-echo "$VPNC_SHA256  $CACHE/vpnc-script" | shasum -a 256 -c - >/dev/null \
-    || { rm -f "$CACHE/vpnc-script"; echo "vpnc-script checksum mismatch" >&2; exit 1; }
-
-if [[ ! -f "$CACHE/openssl-${OPENSSL_VERSION}.tar.gz" ]]; then
-    curl -fsSL "$OPENSSL_URL" -o "$CACHE/openssl-${OPENSSL_VERSION}.tar.gz"
-fi
-echo "$OPENSSL_SHA256  $CACHE/openssl-${OPENSSL_VERSION}.tar.gz" | shasum -a 256 -c - >/dev/null \
-    || { rm -f "$CACHE/openssl-${OPENSSL_VERSION}.tar.gz"; echo "openssl checksum mismatch" >&2; exit 1; }
-
 SDK="$(xcrun --show-sdk-path)"
 rm -rf "$OUT"
-mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/include"
+mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/include" "$CACHE"
 slices=()
 for arch in $ARCHS; do
-    echo "==> Building openconnect ${OC_REF} (${SHA:0:10}, ${arch})"
-    SRC="$CACHE/build-$arch"
-    rm -rf "$SRC"
-    # Keep .git so version.sh reports the real `git describe` version.
-    git clone -q "$REPO" "$SRC"
-    git -C "$SRC" checkout -q --detach "$SHA"
-    # Static OpenSSL with our deployment target. no-shared means lib/ holds
-    # only .a files, so -lssl can't resolve to a dylib.
+    # Static OpenSSL with our deployment target, built out of tree so the
+    # submodule stays clean. no-shared means lib/ holds only .a files, so
+    # -lssl can't resolve to a dylib.
     SSL="$CACHE/openssl-$arch"
-    echo "==> Building OpenSSL ${OPENSSL_VERSION} (${arch})"
-    rm -rf "$SSL" "$SSL-src"; mkdir -p "$SSL-src"
-    tar -xzf "$CACHE/openssl-${OPENSSL_VERSION}.tar.gz" -C "$SSL-src" --strip-components=1
+    echo "==> Building OpenSSL ($(git -C "$OPENSSL_SRC" describe --tags 2>/dev/null || echo "${OPENSSL_SHA:0:10}"), ${arch})"
+    rm -rf "$SSL" "$SSL-build"; mkdir -p "$SSL-build"
     (
-        cd "$SSL-src"
+        cd "$SSL-build"
         case "$arch" in arm64) target=darwin64-arm64-cc ;; x86_64) target=darwin64-x86_64-cc ;; esac
-        ./Configure "$target" no-shared no-tests no-apps no-docs no-module \
+        "$OPENSSL_SRC/Configure" "$target" no-shared no-tests no-apps no-docs no-module \
             --prefix="$SSL" --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0 -isysroot "$SDK" >build.log 2>&1 \
             && make -j"$(sysctl -n hw.ncpu)" build_libs >>build.log 2>&1 \
             && make install_dev >>build.log 2>&1 \
             || { tail -30 build.log >&2; exit 1; }
     )
-    rm -rf "$SSL-src"
+    rm -rf "$SSL-build"
+
+    echo "==> Building libopenconnect ($(git -C "$OC_SRC" describe --tags), ${arch})"
+    SRC="$CACHE/build-$arch"
+    rm -rf "$SRC"
+    # A clone of the submodule (not a copy of its files): autogen and the
+    # build write into the clone, and keeping .git lets version.sh report
+    # the real `git describe` version.
+    git clone -q "$OC_SRC" "$SRC"
+    git -C "$SRC" checkout -q --detach "$OC_SHA"
     (
         cd "$SRC"
         export CFLAGS="-arch $arch -O2 -mmacosx-version-min=27.0 -isysroot $SDK"
@@ -130,7 +135,7 @@ for lib in libssl.a libcrypto.a; do
     if [[ ${#ins[@]} -gt 1 ]]; then lipo -create "${ins[@]}" -output "$OUT/lib/$lib"; else cp "${ins[0]}" "$OUT/lib/$lib"; fi
 done
 cp "$CACHE/build-${ARCHS%% *}/openconnect.h" "$OUT/include/openconnect.h"
-install -m 755 "$CACHE/vpnc-script" "$OUT/vpnc-script"
+install -m 755 "$VPNC_SRC/vpnc-script" "$OUT/vpnc-script"
 cp "$CACHE/build-${ARCHS%% *}/COPYING.LGPL" "$OUT/COPYING.LGPL"
 echo "$STAMP" > "$OUT/.version"
 

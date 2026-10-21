@@ -13,9 +13,12 @@ validation prompts once to pin its fingerprint for that connection.
 ## Requirements
 
 - macOS 27 or later.
-- Build-time only: `brew install autoconf automake libtool`. OpenSSL and libopenconnect are built from
-  upstream `master` by `scripts/build-openconnect.sh` and linked into the helper; pin with
-  `OC_REF=v9.21` (tag, branch or sha), and `OC_ARCHS="arm64 x86_64"` for a universal build.
+- Build-time only: `brew install autoconf automake libtool`. OpenSSL,
+  libopenconnect and the vpnc-script are git submodules in `third_party/`;
+  `scripts/build-openconnect.sh` builds them and links the result into the
+  helper (`OC_ARCHS="arm64 x86_64"` for a universal build). Clone with
+  `--recurse-submodules` (or run `git submodule update --init`), and see
+  `docs/libopenconnect.md` for keeping them up to date.
 - Google Chrome or Chromium installed (used to capture the DSID login
   cookie; a real, visible browser window is used so you can log in with
   your SSO/2FA flow, including any browser extensions like a password

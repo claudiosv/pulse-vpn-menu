@@ -25,7 +25,9 @@ reconnect, `vpn-slice`.
 
 | Piece | Role |
 |---|---|
-| `scripts/build-openconnect.sh` | Builds OpenSSL 3.5.9 and libopenconnect from source (static, macOS 27 target) into `vendor/openconnect/`. `OC_REF` / first argument picks a tag, branch or sha (default `master`); `OC_ARCHS` picks architectures. |
+| `third_party/` | Git submodules: `openssl` (a release tag, shallow), `openconnect`, `vpnc-scripts`. The pin is the commit each points at. |
+| `scripts/build-openconnect.sh` | Builds OpenSSL and libopenconnect from those submodules (static, macOS 27 target) into `vendor/openconnect/`. `OC_ARCHS` picks architectures. |
+| `scripts/check-updates.sh` | Reports newer upstream releases/commits for each submodule (exit 1 if any). |
 | `Sources/COpenConnectShim` | C wrapper: cookie, `make_cstp_connection`, `setup_tun_device` (runs the vpnc-script), `setup_dtls`, `mainloop`. Commands (cancel, stats, reconnect) go through the library's command pipe. |
 | `Sources/OpenConnectKit` | Swift wrapper (`EmbeddedOpenConnect`): one session on its own thread, with log, connected and cert-rejected callbacks. |
 | `Sources/PulseVPNMenuHelper/VPNSession.swift` | Hosts the single session in the helper; builds the `SessionStatus`, samples counters once a second, notifies observers; sets `PATH` so `vpn-slice` is found. |
@@ -85,13 +87,45 @@ the pin prompt.
 ## Build
 
 ```sh
+git submodule update --init              # or clone with --recurse-submodules
 brew install autoconf automake libtool   # build-time only
 ./build.sh --install                     # builds libopenconnect first
-OC_REF=v9.21 ./build.sh                  # pin a release
 ```
 
 `swift build` needs `vendor/` to exist, so run `scripts/build-openconnect.sh`
 first on a fresh checkout.
+
+## Keeping dependencies current
+
+Three things are vendored as submodules; each pin is the commit the submodule
+points at, so an update is a normal reviewable diff.
+
+| Submodule | Tracks | Currently |
+|---|---|---|
+| `third_party/openssl` | a release in the 3.5 series (long-term support), shallow clone | `openssl-3.5.9` |
+| `third_party/openconnect` | a tested snapshot of upstream `master` (move to a release tag when one has what you need) | `v9.21-25-g70d1e79d` |
+| `third_party/vpnc-scripts` | upstream `master` (it has no releases) | `ce9e961` |
+
+```sh
+scripts/check-updates.sh       # what's newer upstream; prints the bump commands
+```
+
+To bump one (the script prints these):
+
+```sh
+git -C third_party/openssl fetch --depth 1 origin tag openssl-3.5.10
+git -C third_party/openssl checkout openssl-3.5.10
+git add third_party/openssl
+scripts/build-openconnect.sh   # builds the checked-out version, even before you commit
+scripts/test-shim.sh && swift test
+# then connect to a real gateway, and commit the changed submodule pointer
+```
+
+The build and the update check only initialise a submodule that is missing;
+they never reset one you've checked out to try. OpenSSL security releases
+need a rebuild and a new app release, since it's linked statically: watch
+`openssl/openssl` releases on GitHub. After moving openconnect, also re-check
+the log-text matches described under "The one remaining text match".
 
 ## Known gaps
 
