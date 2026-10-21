@@ -1,0 +1,47 @@
+Sources/PulseVPNHelperProtocol/SessionSnapshot.swift
+  s_3ad1adb7c5b684::t_eb54d7593f3b4e 1-36
+Sources/COpenConnectShim/ocshim.c
+  s_3ad1adb7c5b684::t_f18bc8c131b530 4,10,21,24-28,51-83,96,100-110,144,148-156,168-169,181,184-189,207,231-234,236-240,243-251,287-292,305-356,360-361
+Sources/PulseVPNMenuHelper/HelperService.swift
+  s_3ad1adb7c5b684::t_eb54d7593f3b4e 35,37,40-41,44-45
+Sources/OpenConnectKit/EmbeddedOpenConnect.swift
+  s_3ad1adb7c5b684::t_eb54d7593f3b4e 11-42,44,130-152
+Sources/PulseVPNMenu/App/AppState.swift
+  s_3ad1adb7c5b684::t_4d4f363fae6b29 41
+docs/libopenconnect.md
+  s_3ad1adb7c5b684::t_6056a38f34e397 72-114,118-124
+Sources/PulseVPNMenuHelper/VPNSession.swift
+  s_3ad1adb7c5b684::t_eb54d7593f3b4e 3,29-50,123-131
+  s_3ad1adb7c5b684::t_33c9afcd21337f 132
+Sources/PulseVPNMenu/VPN/StatsParser.swift
+  s_3ad1adb7c5b684::t_4d4f363fae6b29 2,4,14-17,26-36,41
+Sources/PulseVPNMenu/Privileged/PrivilegedHelperClient.swift
+  s_3ad1adb7c5b684::t_4d4f363fae6b29 194,199-200,206-214,217-218,291-292
+Sources/PulseVPNHelperProtocol/PrivilegedHelperProtocol.swift
+  s_3ad1adb7c5b684::t_eb54d7593f3b4e 68-69,75-76,79-82
+Sources/COpenConnectShim/include/ocshim.h
+  s_3ad1adb7c5b684::t_0eeb70f031db4d 10,16-17,30-44,57-65
+Sources/OCShimProbe/main.swift
+  s_3ad1adb7c5b684::t_3a344e8966e4c5 7,38-42
+Sources/PulseVPNMenu/Persistence/LogStore.swift
+  s_3ad1adb7c5b684::t_4d4f363fae6b29 16,125
+Sources/PulseVPNMenu/VPN/OpenConnectController.swift
+  s_3ad1adb7c5b684::t_67e59d53605491 4,38-39,55-57,62-64,67-71,98-100,121-127,129,134-137,276-277,314,386-387,396,425-429,480-499,526,530,539,543-546
+  s_3ad1adb7c5b684::t_4939ade0642873 547
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dedb73c7d2b80a09fd98a806bfc2456d10f2d1fd",
+  "prompts": {},
+  "sessions": {
+    "s_3ad1adb7c5b684": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "eef3554b-8bab-4b68-a316-57dd58c13953",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
