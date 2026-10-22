@@ -1,0 +1,25 @@
+build.sh
+  s_ccb64a207d6e7a::t_68091dd223fc53 33
+  s_ccb64a207d6e7a::t_cb420fa196bc5a 45-53
+scripts/build-openconnect.sh
+  s_ccb64a207d6e7a::t_f0b2f3f01b465b 85-90,92-106,109-126,131,134-135,154,171
+  s_ccb64a207d6e7a::t_1a50f271cb2a9f 60,65,69-79
+  s_ccb64a207d6e7a::t_519de902f6904d 2-4
+  s_ccb64a207d6e7a::t_6371a76596b8b0 24-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53142f075dc07394da146c6183edaf792ac25332",
+  "prompts": {},
+  "sessions": {
+    "s_ccb64a207d6e7a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7df8bf57-a9d2-43af-a43d-019b63b7e848",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Claudio Spiess <claudiosv@users.noreply.github.com>"
+    }
+  }
+}
