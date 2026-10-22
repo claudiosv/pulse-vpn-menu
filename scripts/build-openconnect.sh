@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build OpenSSL and libopenconnect (plus the openconnect CLI) from the git
-# submodules in third_party/ into vendor/openconnect/, for build.sh to link
-# into the helper and bundle.
+# Build OpenSSL and libopenconnect from the git submodules in third_party/
+# into vendor/openconnect/, for build.sh to link into the helper (and bundle
+# the vpnc-script).
 #
 #   third_party/openssl        OpenSSL (a release tag)
 #   third_party/openconnect    libopenconnect
@@ -21,7 +21,11 @@
 # (libz, libxml2, libSystem), so it runs on any Mac without Homebrew. OpenSSL
 # is configured with a CA path that matches macOS: /etc/ssl/cert.pem.
 # Build-time deps: `brew install autoconf automake libtool` (and perl, which
-# macOS ships).
+# macOS ships). `ccache` is used when installed.
+#
+# Caches under vendor/.cache: a static OpenSSL per arch, keyed on its pin and
+# flags (so an openconnect bump doesn't rebuild it), and the autogen'd
+# openconnect tree, keyed on its pin.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -53,58 +57,86 @@ VPNC_SHA="$(pinned "$VPNC_SRC")"
 
 # Building from a modified submodule is allowed (it's how you try a patch),
 # but never treated as cached.
-dirty=""
+dirty="" ssl_dirty=""
 for dep in "$OPENSSL_SRC" "$OC_SRC" "$VPNC_SRC"; do
     if [[ -n "$(git -C "$dep" status --porcelain)" ]]; then
         echo "warning: ${dep#"$PWD/"} has local changes; building with them" >&2
         dirty="+dirty-$(date +%s)"
+        [[ $dep == "$OPENSSL_SRC" ]] && ssl_dirty=1
     fi
 done
-STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12} vpnc-scripts@${VPNC_SHA:0:12}+etcssl+macos27$dirty $ARCHS"
 
-if [[ -x "$OUT/bin/openconnect" && -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
+# Static OpenSSL with our deployment target. DTLS stays on (openconnect's ESP
+# fallback needs it); the engine API, legacy provider and compression are
+# unused. no-shared means lib/ holds only .a files, so -lssl can't resolve to
+# a dylib.
+OPENSSL_OPTS=(no-shared no-tests no-apps no-docs no-module no-legacy no-engine no-comp no-ssl3
+              --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0)
+OC_CFLAGS="-O3 -mmacosx-version-min=27.0"
+
+STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12} vpnc-scripts@${VPNC_SHA:0:12}+${OPENSSL_OPTS[*]// /,}+$OC_CFLAGS$dirty $ARCHS"
+
+if [[ -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
     echo "==> libopenconnect ($(git -C "$OC_SRC" describe --tags)) already built"
     exit 0
 fi
 
 SDK="$(xcrun --show-sdk-path)"
+CC_BIN="clang"
+if command -v ccache >/dev/null; then
+    CC_BIN="ccache clang"
+    export CCACHE_BASEDIR="$PWD"
+fi
+
 rm -rf "$OUT"
-mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/include" "$CACHE"
-slices=()
+mkdir -p "$OUT/lib" "$OUT/include" "$CACHE"
+
+# autogen'd openconnect tree for this pin, shared by every arch and reused
+# until the pin changes. A clone (not a copy of the submodule's files) so
+# version.sh can report the real `git describe` version.
+GEN="$CACHE/oc-$OC_SHA"
+for old in "$CACHE"/oc-*; do [[ $old == "$GEN" ]] || rm -rf "$old"; done
+if [[ ! -x "$GEN/configure" ]]; then
+    echo "==> Generating openconnect configure ($(git -C "$OC_SRC" describe --tags))"
+    rm -rf "$GEN"
+    git clone -q "$OC_SRC" "$GEN"
+    git -C "$GEN" checkout -q --detach "$OC_SHA"
+    (cd "$GEN" && ./autogen.sh >autogen.log 2>&1) || { tail -30 "$GEN/autogen.log" >&2; rm -rf "$GEN"; exit 1; }
+fi
+
 for arch in $ARCHS; do
-    # Static OpenSSL with our deployment target, built out of tree so the
-    # submodule stays clean. no-shared means lib/ holds only .a files, so
-    # -lssl can't resolve to a dylib.
     SSL="$CACHE/openssl-$arch"
-    echo "==> Building OpenSSL ($(git -C "$OPENSSL_SRC" describe --tags 2>/dev/null || echo "${OPENSSL_SHA:0:10}"), ${arch})"
-    rm -rf "$SSL" "$SSL-build"; mkdir -p "$SSL-build"
-    (
-        cd "$SSL-build"
-        case "$arch" in arm64) target=darwin64-arm64-cc ;; x86_64) target=darwin64-x86_64-cc ;; esac
-        "$OPENSSL_SRC/Configure" "$target" no-shared no-tests no-apps no-docs no-module \
-            --prefix="$SSL" --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0 -isysroot "$SDK" >build.log 2>&1 \
-            && make -j"$(sysctl -n hw.ncpu)" build_libs >>build.log 2>&1 \
-            && make install_dev >>build.log 2>&1 \
-            || { tail -30 build.log >&2; exit 1; }
-    )
-    rm -rf "$SSL-build"
+    SSL_KEY="${OPENSSL_SHA} ${OPENSSL_OPTS[*]}"
+    if [[ -z "$ssl_dirty" && -f "$SSL/lib/libcrypto.a" && "$(cat "$SSL/.key" 2>/dev/null)" == "$SSL_KEY" ]]; then
+        echo "==> OpenSSL (${arch}) cached"
+    else
+        echo "==> Building OpenSSL ($(git -C "$OPENSSL_SRC" describe --tags 2>/dev/null || echo "${OPENSSL_SHA:0:10}"), ${arch})"
+        rm -rf "$SSL" "$SSL-build"; mkdir -p "$SSL-build"
+        (
+            cd "$SSL-build"
+            case "$arch" in arm64) target=darwin64-arm64-cc ;; x86_64) target=darwin64-x86_64-cc ;; esac
+            CC="$CC_BIN" "$OPENSSL_SRC/Configure" "$target" "${OPENSSL_OPTS[@]}" \
+                --prefix="$SSL" -isysroot "$SDK" >build.log 2>&1 \
+                && make -j"$(sysctl -n hw.ncpu)" build_libs >>build.log 2>&1 \
+                && make install_dev >>build.log 2>&1 \
+                || { tail -30 build.log >&2; exit 1; }
+        )
+        rm -rf "$SSL-build"
+        echo "$SSL_KEY" > "$SSL/.key"
+    fi
 
     echo "==> Building libopenconnect ($(git -C "$OC_SRC" describe --tags), ${arch})"
     SRC="$CACHE/build-$arch"
     rm -rf "$SRC"
-    # A clone of the submodule (not a copy of its files): autogen and the
-    # build write into the clone, and keeping .git lets version.sh report
-    # the real `git describe` version.
-    git clone -q "$OC_SRC" "$SRC"
-    git -C "$SRC" checkout -q --detach "$OC_SHA"
+    cp -Rp "$GEN" "$SRC"
     (
         cd "$SRC"
-        export CFLAGS="-arch $arch -O2 -mmacosx-version-min=27.0 -isysroot $SDK"
+        export CC="$CC_BIN"
+        export CFLAGS="-arch $arch $OC_CFLAGS -isysroot $SDK"
         export LDFLAGS="-arch $arch"
         # Hide Homebrew's .pc files so optional deps (p11-kit, ...) aren't
         # picked up; everything we want is passed explicitly below.
         export PKG_CONFIG_LIBDIR="$SRC/no-pc" PKG_CONFIG_PATH=""
-        ./autogen.sh >autogen.log 2>&1 || { tail -30 autogen.log >&2; exit 1; }
         # The compiled-in vpnc-script path is a placeholder: the app always
         # passes `-s` (bundled script unless the profile sets its own).
         # Pre-seeding the pkg-config results points configure at the static
@@ -119,17 +151,9 @@ for arch in $ARCHS; do
             LIBXML2_CFLAGS="-I$SDK/usr/include/libxml2" \
             LIBXML2_LIBS="-lxml2" \
             ZLIB_CFLAGS="" ZLIB_LIBS="-lz" >configure.log 2>&1 || { tail -30 configure.log >&2; exit 1; }
-        make -j"$(sysctl -n hw.ncpu)" openconnect >make.log 2>&1 || { tail -30 make.log >&2; exit 1; }
+        make -j"$(sysctl -n hw.ncpu)" libopenconnect.la >make.log 2>&1 || { tail -30 make.log >&2; exit 1; }
     )
-    slices+=("$SRC/openconnect")
 done
-
-if [[ ${#slices[@]} -gt 1 ]]; then
-    lipo -create "${slices[@]}" -output "$OUT/bin/openconnect"
-else
-    cp "${slices[0]}" "$OUT/bin/openconnect"
-fi
-strip -x "$OUT/bin/openconnect"
 
 # libopenconnect for the in-process shim (Sources/COpenConnectShim). OpenSSL
 # is copied alongside so SwiftPM only needs to know about one directory.
@@ -144,6 +168,4 @@ install -m 755 "$VPNC_SRC/vpnc-script" "$OUT/vpnc-script"
 cp "$CACHE/build-${ARCHS%% *}/COPYING.LGPL" "$OUT/COPYING.LGPL"
 echo "$STAMP" > "$OUT/.version"
 
-echo "==> Linked libraries (should be system-only):"
-otool -L "$OUT/bin/openconnect" | tail -n +2
-"$OUT/bin/openconnect" --version | head -3
+lipo -info "$OUT/lib/libopenconnect.a"

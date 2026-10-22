@@ -30,7 +30,7 @@ echo "==> Building libopenconnect"
 ./scripts/build-openconnect.sh
 
 echo "==> swift build -c release"
-swift build -c release
+swift build -c release --product "${EXECUTABLE_NAME}" --product "${HELPER_EXECUTABLE_NAME}"
 
 APP_BUNDLE="dist/${APP_NAME}.app"
 rm -rf dist
@@ -41,6 +41,15 @@ mkdir -p "${APP_BUNDLE}/Contents/Library/LaunchDaemons"
 echo "==> Copying executables"
 cp ".build/release/${EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}"
 cp ".build/release/${HELPER_EXECUTABLE_NAME}" "${APP_BUNDLE}/Contents/MacOS/${HELPER_EXECUTABLE_NAME}"
+
+# Keep symbols for crash reports in dist/dSYMs (outside the bundle), then
+# strip the shipped copies. Must happen before codesigning.
+echo "==> Extracting dSYMs and stripping"
+mkdir -p dist/dSYMs
+for exe in "${EXECUTABLE_NAME}" "${HELPER_EXECUTABLE_NAME}"; do
+    dsymutil ".build/release/${exe}" -o "dist/dSYMs/${exe}.dSYM" 2>/dev/null
+    strip -x "${APP_BUNDLE}/Contents/MacOS/${exe}"
+done
 
 echo "==> Bundling vpnc-script"
 cp vendor/openconnect/vpnc-script "${APP_BUNDLE}/Contents/Resources/vpnc-script"
