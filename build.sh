@@ -30,7 +30,11 @@ echo "==> Building libopenconnect"
 ./scripts/build-openconnect.sh
 
 echo "==> swift build -c release"
-swift build -c release --product "${EXECUTABLE_NAME}" --product "${HELPER_EXECUTABLE_NAME}"
+# `--product` is single-valued (the last one wins), so build each product
+# separately; passing both silently skips the app and bundles a stale binary.
+for product in "${EXECUTABLE_NAME}" "${HELPER_EXECUTABLE_NAME}"; do
+    swift build -c release --product "${product}"
+done
 
 APP_BUNDLE="dist/${APP_NAME}.app"
 rm -rf dist

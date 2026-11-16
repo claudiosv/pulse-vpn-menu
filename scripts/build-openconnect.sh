@@ -96,12 +96,27 @@ mkdir -p "$OUT/lib" "$OUT/include" "$CACHE"
 # version.sh can report the real `git describe` version.
 GEN="$CACHE/oc-$OC_SHA"
 for old in "$CACHE"/oc-*; do [[ $old == "$GEN" ]] || rm -rf "$old"; done
-if [[ ! -x "$GEN/configure" ]]; then
+# A tree generated before this used --copy symlinks its auxiliary files
+# (compile, install-sh, config.guess, ...) into the versioned Homebrew
+# automake share dir; an automake upgrade leaves them dangling, so treat
+# any broken top-level symlink as a stale cache.
+if [[ ! -x "$GEN/configure" || -n "$(find -L "$GEN" -maxdepth 1 -type l 2>/dev/null)" ]]; then
     echo "==> Generating openconnect configure ($(git -C "$OC_SRC" describe --tags))"
     rm -rf "$GEN"
     git clone -q "$OC_SRC" "$GEN"
     git -C "$GEN" checkout -q --detach "$OC_SHA"
-    (cd "$GEN" && ./autogen.sh >autogen.log 2>&1) || { tail -30 "$GEN/autogen.log" >&2; rm -rf "$GEN"; exit 1; }
+    # openconnect's autogen.sh, but with --copy so the auxiliary files are
+    # real copies rather than symlinks into the automake install.
+    (
+        cd "$GEN"
+        LIBTOOLIZE=libtoolize
+        type glibtoolize >/dev/null 2>&1 && LIBTOOLIZE=glibtoolize
+        aclocal -I m4 &&
+            "$LIBTOOLIZE" --automake --force --copy &&
+            autoheader --force &&
+            automake --foreign --add-missing --force --copy &&
+            autoconf --force
+    ) >"$GEN/autogen.log" 2>&1 || { tail -30 "$GEN/autogen.log" >&2; rm -rf "$GEN"; exit 1; }
 fi
 
 for arch in $ARCHS; do
