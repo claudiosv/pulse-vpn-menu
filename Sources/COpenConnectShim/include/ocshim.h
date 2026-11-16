@@ -74,6 +74,7 @@ typedef struct {
     uint64_t stats_seq;           /* increments on every fresh counter sample */
     uint64_t tx_pkts, tx_bytes, rx_pkts, rx_bytes;   /* cumulative */
     double sampled_at;            /* unix time of the last counter sample */
+    double expires_at;            /* unix time the login expires; 0 if unknown */
     /* Set once the tunnel is up; empty before that. */
     char address[64];             /* the tunnel's IPv4 address, if it has one */
 } ocshim_snapshot;

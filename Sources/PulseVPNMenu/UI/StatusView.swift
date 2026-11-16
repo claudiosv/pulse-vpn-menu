@@ -206,6 +206,18 @@ struct StatusView: View {
                 }
             }
 
+            if let expiry = appState.connectedExpiry {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("LOGIN")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Text("expires \(expiry.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(expiry.timeIntervalSinceNow < 3600 ? .orange : .secondary)
+                    Spacer(minLength: 0)
+                }
+            }
+
             if let dns = appState.connectedDNSDescription {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("DNS")

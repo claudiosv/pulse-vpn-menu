@@ -326,6 +326,11 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
         char buf[80];
         struct tm tm;
 
+        pthread_mutex_lock(&s->mu);
+        s->snap.expires_at = (double)exp;
+        pthread_mutex_unlock(&s->mu);
+        notify_changed(s);
+
         localtime_r(&exp, &tm);
         strftime(buf, sizeof(buf), "%a, %d %b %Y %H:%M:%S %Z", &tm);
         emitf(s, PRG_INFO, "Session authentication will expire at %s\n", buf);

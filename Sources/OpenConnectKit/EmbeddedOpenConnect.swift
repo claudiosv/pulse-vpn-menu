@@ -18,6 +18,8 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
     public var statsSequence: UInt64
     /// When the counters were last refreshed (seconds since 1970).
     public var sampledAt: Double
+    /// When the login expires (seconds since 1970), if the server said.
+    public var expiresAt: Double?
     public var txPackets: UInt64
     public var txBytes: UInt64
     public var rxPackets: UInt64
@@ -31,6 +33,7 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
         dropCount = c.drop_count
         statsSequence = c.stats_seq
         sampledAt = c.sampled_at
+        expiresAt = c.expires_at > 0 ? c.expires_at : nil
         txPackets = c.tx_pkts
         txBytes = c.tx_bytes
         rxPackets = c.rx_pkts

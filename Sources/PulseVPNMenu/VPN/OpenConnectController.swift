@@ -109,6 +109,13 @@ final class OpenConnectController: ObservableObject {
     /// runs over the TLS connection.
     private var tunnelUsesESP = false
 
+    /// When the login expires, and the expiry the warning notification is
+    /// scheduled for.
+    private var loginExpiry: Date?
+    private var warnedExpiry: Date?
+    /// How long before the login runs out the warning is posted.
+    private static let expiryWarning: TimeInterval = 10 * 60
+
     /// Demo mode's stand-in for `runtimeState`: when the simulated session
     /// started, plus the counter generator feeding `stats`. Nil whenever
     /// the simulated tunnel is "down" (and always nil outside demo mode).
@@ -235,6 +242,32 @@ final class OpenConnectController: ObservableObject {
     var connectedTransport: String? {
         guard isConnected() else { return nil }
         return tunnelUsesESP ? "ESP (UDP)" : "TLS (TCP)"
+    }
+
+    /// When the login expires, while connected and if the server said.
+    var connectedExpiry: Date? {
+        isConnected() ? loginExpiry : nil
+    }
+
+    private func scheduleExpiryWarning() {
+        guard let expiry = loginExpiry, expiry != warnedExpiry else { return }
+        warnedExpiry = expiry
+        guard appSettings.notifyOnUnexpectedDisconnect, expiry > Date() else { return }
+        let label = tunnelLabelForExpiry()
+        Notifier.shared.schedule(
+            .expiring, at: expiry.addingTimeInterval(-Self.expiryWarning),
+            title: "VPN login expiring",
+            body: "\(label) signs out at \(expiry.formatted(date: .omitted, time: .shortened)). Reconnect before then to stay signed in.")
+    }
+
+    private func tunnelLabelForExpiry() -> String {
+        runtimeState.map { profileLabel($0) } ?? "The VPN"
+    }
+
+    private func clearExpiry() {
+        loginExpiry = nil
+        warnedExpiry = nil
+        Notifier.shared.cancel(.expiring)
     }
 
     /// Just the tunnel's address, e.g. "172.25.228.228", for the menu
@@ -404,6 +437,7 @@ final class OpenConnectController: ObservableObject {
         connectedProfileID = nil
         tunnel = nil
         tunnelDNS = nil
+        clearExpiry()
         if let profileID { clearSavedLogin?(profileID) }
     }
 
@@ -495,6 +529,7 @@ final class OpenConnectController: ObservableObject {
         connectedProfileID = nil
         tunnel = nil
         tunnelDNS = nil
+        clearExpiry()
     }
 
     private func notifyLost(state: RuntimeState, reason: String) {
@@ -577,6 +612,8 @@ final class OpenConnectController: ObservableObject {
             tunnel = (snapshot.interfaceName, address)
         }
         tunnelUsesESP = snapshot.espEstablished
+        loginExpiry = snapshot.expiresAt
+        scheduleExpiryWarning()
         if let servers = snapshot.dnsServers, !servers.isEmpty {
             tunnelDNS = (servers, snapshot.dnsDomains)
         } else {

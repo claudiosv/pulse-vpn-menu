@@ -26,6 +26,8 @@ final class AppState: ObservableObject {
     @Published private(set) var connectedDNSDescription: String?
     /// "ESP (UDP)" or "TLS (TCP)"; snapshotted with the lines above.
     @Published private(set) var connectedTransport: String?
+    /// When the login expires; snapshotted with the lines above.
+    @Published private(set) var connectedExpiry: Date?
 
     /// Which section the main window shows. Lives here rather than in
     /// `MainWindowView`'s `@State` so the menu bar can open the window
@@ -87,6 +89,7 @@ final class AppState: ObservableObject {
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil
         connectedDNSDescription = connected ? controller.connectedDNSDescription : nil
         connectedTransport = connected ? controller.connectedTransport : nil
+        connectedExpiry = connected ? controller.connectedExpiry : nil
         if controller.isBusy {
             statusText = "VPN: working…"
         } else if connected {

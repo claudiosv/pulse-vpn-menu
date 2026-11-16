@@ -29,13 +29,16 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
     public var dnsServers: [String]?
     /// The domains those servers answer for; nil means everything.
     public var dnsDomains: [String]?
+    /// When the login expires, if the server said.
+    public var expiresAt: Date?
 
     public init(
         linkState: LinkState, espEstablished: Bool, dropCount: Int, statsSequence: Int,
         sampledAt: Date, txPackets: UInt64, txBytes: UInt64, rxPackets: UInt64, rxBytes: UInt64,
         interfaceName: String?, address: String?,
-        dnsServers: [String]? = nil, dnsDomains: [String]? = nil
+        dnsServers: [String]? = nil, dnsDomains: [String]? = nil, expiresAt: Date? = nil
     ) {
+        self.expiresAt = expiresAt
         self.linkState = linkState
         self.espEstablished = espEstablished
         self.dropCount = dropCount

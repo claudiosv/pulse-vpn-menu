@@ -190,7 +190,8 @@ public final class TunnelSession: @unchecked Sendable {
             txPackets: s.txPackets, txBytes: s.txBytes,
             rxPackets: s.rxPackets, rxBytes: s.rxBytes,
             interfaceName: interfaceName, address: s.address,
-            dnsServers: dnsServers, dnsDomains: dnsDomains
+            dnsServers: dnsServers, dnsDomains: dnsDomains,
+            expiresAt: s.expiresAt.map { Date(timeIntervalSince1970: $0) }
         )
     }
 }

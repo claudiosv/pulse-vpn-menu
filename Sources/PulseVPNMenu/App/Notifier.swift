@@ -16,6 +16,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case lost = "vpn.lost"
         case dropped = "vpn.dropped"
         case restored = "vpn.restored"
+        case expiring = "vpn.expiring"
     }
 
     private var isAvailable: Bool { Bundle.main.bundleIdentifier != nil }
@@ -38,6 +39,25 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.sound = .default
         let request = UNNotificationRequest(identifier: kind.rawValue, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Posts `.expiring` at `date` (at once if that has passed), replacing
+    /// any earlier one.
+    func schedule(_ kind: Kind, at date: Date, title: String, body: String) {
+        guard isAvailable else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let delay = date.timeIntervalSinceNow
+        let trigger = delay > 1 ? UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false) : nil
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: kind.rawValue, content: content, trigger: trigger))
+    }
+
+    func cancel(_ kind: Kind) {
+        guard isAvailable else { return }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [kind.rawValue])
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [kind.rawValue])
     }
 
     /// Show the banner even while the main window is frontmost — by
