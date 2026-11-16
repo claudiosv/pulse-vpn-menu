@@ -1,12 +1,13 @@
 # Possible improvements
 
 Ideas that came out of the Network Extension port, ranked by how much they
-would improve daily use. Nothing here is started. File references are where
+would improve daily use. Items marked "Done" are implemented (not yet tested
+by hand in the app). File references are where
 the change would land.
 
 ## Worth doing first
 
-### 1. Stop the wasted first connect attempt
+### 1. Stop the wasted first connect attempt (Done)
 
 Disconnecting logs the session off on the server (`OC_CMD_CANCEL`), which
 invalidates the DSID cookie the app has just cached in
@@ -23,7 +24,11 @@ connect.
 Where: `OpenConnectController.disconnect()`, `ConnectionStore.updateDSID`.
 See also "Clear cached cookie option" in [libopenconnect.md](libopenconnect.md).
 
-### 2. Connect from System Settings without the flicker
+Done: `lastDSID` is cleared after a disconnect from the app and after a stop
+from System Settings (`OpenConnectController.clearSavedLogin`). Not done: the
+"Clear saved login" button.
+
+### 2. Connect from System Settings without the flicker (Done)
 
 A start from System Settings > VPN carries no login cookie. Today the
 provider fails at once with `needsLoginExitCode`, the app notices, logs in,
@@ -35,7 +40,12 @@ deliver the cookie in a message, with a timeout if the app isn't running.
 Where: `PacketTunnelProvider.startTunnel`, a new `TunnelRequest` operation,
 `TunnelClient.connectionStatusChanged`.
 
-### 3. Reconnect on wake and network change
+Done: the provider stays in "Connecting", reports `SessionStatus.awaitingLogin`
+and accepts a `.login` request with the cookie (protocol version 4). It gives
+up after `TunnelConstants.loginWait` (180 s). The app signs in and sends the
+cookie in `TunnelClient.start` instead of restarting the tunnel.
+
+### 3. Reconnect on wake and network change (Done)
 
 Nothing reacts to sleep, wake or a Wi-Fi switch. The tunnel waits for
 dead-peer detection (a probe every 5 s, then libopenconnect's retries) to
@@ -46,6 +56,11 @@ notice the link is gone.
   interface or its address changes.
 
 Where: `PacketTunnelProvider`, `TunnelSession.requestReconnect()`.
+
+Done: `wake()` and an `NWPathMonitor` (ignoring the tunnel's own interface)
+schedule a reconnect after 2 s. The monitor compares status, interfaces and
+gateways; a change of IP address on the same interface and gateway is not
+detected.
 
 ### 4. Connect on demand
 
