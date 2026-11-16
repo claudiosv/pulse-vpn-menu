@@ -7,7 +7,10 @@ import Foundation
 /// Direct reimplementation of `launcher.py`'s `fetch_dsid()`.
 actor DSIDAuthenticator {
     func fetchDSID(vpnURL: String) async throws -> String {
+        // The login profile is kept between runs; the 1Password extension in
+        // it needs its desktop-app host to unlock without the master password.
         try await ChromeCookieFetcher.fetch(
-            cookieNamed: "DSID", at: vpnURL, profileDir: AppPaths.chromeProfileDir)
+            cookieNamed: "DSID", at: vpnURL, profileDir: AppPaths.chromeProfileDir,
+            nativeMessagingHosts: ["com.1password.1password"])
     }
 }

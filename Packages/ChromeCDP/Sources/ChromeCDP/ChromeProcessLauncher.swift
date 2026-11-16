@@ -25,8 +25,17 @@ public enum ChromeProcessLauncher {
         let webSocketDebuggerUrl: String
     }
 
-    public static func launch(profileDir: URL) async throws -> LaunchResult {
+    /// - Parameters:
+    ///   - profileDir: Chrome's user-data directory.
+    ///   - nativeMessagingHosts: names of native messaging hosts (e.g.
+    ///     `com.1password.1password`) to make available to extensions in this
+    ///     profile. Chrome only reads a custom profile's own
+    ///     `NativeMessagingHosts` folder, so each manifest is linked in from
+    ///     the default Chrome profile; without it an extension such as
+    ///     1Password can't reach its desktop app.
+    public static func launch(profileDir: URL, nativeMessagingHosts: [String] = []) async throws -> LaunchResult {
         try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
+        linkNativeMessagingHosts(nativeMessagingHosts, into: profileDir)
 
         let chromePath = try ChromeLocator.locate()
         let port = try FreePort.pick()
@@ -64,6 +73,27 @@ public enum ChromeProcessLauncher {
         } catch {
             process.terminate()
             throw error
+        }
+    }
+
+    /// Symlinks `<name>.json` from Chrome's default `NativeMessagingHosts`
+    /// folder into the profile's. A host that isn't installed is skipped.
+    static func linkNativeMessagingHosts(
+        _ names: [String], into profileDir: URL,
+        from source: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome/NativeMessagingHosts")
+    ) {
+        guard !names.isEmpty else { return }
+        let fileManager = FileManager.default
+        let destination = profileDir.appendingPathComponent("NativeMessagingHosts", isDirectory: true)
+        try? fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+        for name in names {
+            let manifest = source.appendingPathComponent("\(name).json")
+            let link = destination.appendingPathComponent("\(name).json")
+            guard fileManager.fileExists(atPath: manifest.path) else { continue }
+            if (try? fileManager.destinationOfSymbolicLink(atPath: link.path)) == manifest.path { continue }
+            try? fileManager.removeItem(at: link)
+            try? fileManager.createSymbolicLink(at: link, withDestinationURL: manifest)
         }
     }
 

@@ -22,15 +22,18 @@ public enum ChromeCookieFetcher {
     ///   - url: the page to open.
     ///   - profileDir: Chrome's user-data directory, kept between runs so the
     ///     browser remembers the user.
+    ///   - nativeMessagingHosts: see `ChromeProcessLauncher.launch`.
     ///   - pollInterval: how often to look for the cookie.
     /// - Throws: `FetchError.cancelled` if the user closes Chrome first.
     public static func fetch(
         cookieNamed name: String,
         at url: String,
         profileDir: URL,
+        nativeMessagingHosts: [String] = [],
         pollInterval: Duration = .seconds(1)
     ) async throws -> String {
-        let launch = try await ChromeProcessLauncher.launch(profileDir: profileDir)
+        let launch = try await ChromeProcessLauncher.launch(
+            profileDir: profileDir, nativeMessagingHosts: nativeMessagingHosts)
         let client = CDPClient()
 
         defer {
