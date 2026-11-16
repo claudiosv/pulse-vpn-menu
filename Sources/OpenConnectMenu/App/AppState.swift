@@ -83,8 +83,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The last (connected, busy) pair written to the log, so a state that
+    /// the menu shows wrongly can be compared with what the app believed.
+    private var loggedState: (connected: Bool, busy: Bool)?
+
     func refresh() {
         let connected = controller.isConnected()
+        if loggedState?.connected != connected || loggedState?.busy != controller.isBusy {
+            loggedState = (connected, controller.isBusy)
+            logStore.append("App state: \(connected ? "connected" : "disconnected")\(controller.isBusy ? ", busy" : "")\n")
+        }
         isConnected = connected
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil
         connectedDNSDescription = connected ? controller.connectedDNSDescription : nil

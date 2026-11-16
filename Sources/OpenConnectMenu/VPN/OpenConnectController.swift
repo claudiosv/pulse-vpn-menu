@@ -600,9 +600,12 @@ final class OpenConnectController: ObservableObject {
     }
 
     /// "Up" for connect/reconnect: the session ended (nothing more to wait
-    /// for), or ESP is established and the tunnel has an address.
+    /// for), or ESP is established and the tunnel has an address. A provider
+    /// that hasn't started its session yet (`.none`) is neither: it is
+    /// still starting, and reading that as "ended" reported a failure for a
+    /// tunnel that came up a moment later.
     private static func isTunnelUp(_ status: SessionStatus) -> Bool {
-        !status.isRunning || (status.snapshot?.espEstablished == true && status.snapshot?.address != nil)
+        status.state == .exited || (status.snapshot?.espEstablished == true && status.snapshot?.address != nil)
     }
 
     /// Folds a snapshot into app state: the tunnel identity, drop/restore
