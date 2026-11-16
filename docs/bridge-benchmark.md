@@ -1,6 +1,6 @@
 # Packet bridge benchmark
 
-How fast `PacketBridge` (`Sources/PulseVPNTunnelCore/PacketBridge.swift`) moves
+How fast `PacketBridge` (`Sources/OpenConnectTunnelCore/PacketBridge.swift`) moves
 packets between the system's packet flow and libopenconnect. It exists to
 answer [improvements.md](improvements.md) item 13: is the socket pair between
 the two a bottleneck?
@@ -16,7 +16,7 @@ BRIDGE_BENCH=1 swift test --filter PacketBridgeBenchmark
 Each case runs for 3 seconds and prints one line starting with `BENCH`. The
 suite is `.serialized`; run in parallel the cases compete for CPU and the
 numbers are meaningless. Source:
-`Tests/PulseVPNTunnelTests/PacketBridgeBenchmark.swift`.
+`Tests/OpenConnectTunnelTests/PacketBridgeBenchmark.swift`.
 
 ## What it measures
 

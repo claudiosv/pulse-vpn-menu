@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Enabled by launching with `--demo` (or `PULSE_VPN_MENU_DEMO=1`):
 ///
-///     open -n "dist/Pulse VPN Menu.app" --args --demo
+///     open -n "dist/OpenConnect Menu.app" --args --demo
 ///
 /// While enabled, `OpenConnectController` never talks to the tunnel
 /// extension or the system's VPN configurations — so a demo instance is safe

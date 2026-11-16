@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import OpenConnectKit
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 
 /// The single in-process libopenconnect session a provider hosts, plus the
 /// `SessionStatus` and log it reports to the app.
@@ -68,7 +68,7 @@ public final class TunnelSession: @unchecked Sendable {
             core.awaitingLogin = true
             core.startedAt = Date()
         }
-        log.append("Waiting for Pulse VPN Menu to sign in…\n")
+        log.append("Waiting for OpenConnect Menu to sign in…\n")
         onChange?()
     }
 

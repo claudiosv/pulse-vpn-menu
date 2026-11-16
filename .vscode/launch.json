@@ -5,20 +5,20 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:pulse-vpn-menu}",
-            "name": "Debug PulseVPNMenu",
-            "target": "PulseVPNMenu",
+            "name": "Debug OpenConnectMenu",
+            "target": "OpenConnectMenu",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug PulseVPNMenu"
+            "preLaunchTask": "swift: Build Debug OpenConnectMenu"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:pulse-vpn-menu}",
-            "name": "Release PulseVPNMenu",
-            "target": "PulseVPNMenu",
+            "name": "Release OpenConnectMenu",
+            "target": "OpenConnectMenu",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release PulseVPNMenu"
+            "preLaunchTask": "swift: Build Release OpenConnectMenu"
         }
     ]
 }

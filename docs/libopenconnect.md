@@ -94,7 +94,7 @@ the log-text matches described under "The one remaining text match".
 
 The app no longer parses `current.log`. The shim keeps an `ocshim_snapshot`
 that the extension hands the app as JSON (`SessionSnapshot`, in
-`PulseVPNTunnelProtocol`):
+`OpenConnectTunnelProtocol`):
 
 | Field | Source |
 |---|---|

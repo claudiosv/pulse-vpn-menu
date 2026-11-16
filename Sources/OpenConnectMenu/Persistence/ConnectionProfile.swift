@@ -1,5 +1,5 @@
 import Foundation
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 
 /// A single named VPN connection configuration. Replaces the Python app's
 /// single-profile `config.toml` with a multi-profile JSON model. Each one is

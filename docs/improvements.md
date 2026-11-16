@@ -177,11 +177,27 @@ manual command (`sudo launchctl bootout system/com.claudiosv.pulse-vpn-menu.help
 once and stops trying. The automatic path only helps where the registration is
 still visible to `SMAppService`.
 
-### 10. Rename the internals
+### 10. Rename the internals (Done)
 
 The bundle identifiers are `ai.claudio.openconnect[.networkextension]`, but
-targets, source paths, the app name and the notary keychain profile still say
+targets, source paths, the app name and the notary keychain profile still said
 `PulseVPN…` / `pulse-vpn-menu`. Pick one name.
+
+Done: the name is "OpenConnect Menu". The app is `OpenConnect Menu.app`; the
+targets and source directories are `OpenConnectMenu`, `OpenConnectTunnel`,
+`OpenConnectTunnelCore`, `OpenConnectTunnelProtocol` (and their tests); the
+extension's principal class is `OpenConnectPacketTunnelProvider`. The data
+folder `~/Library/Application Support/Pulse VPN Menu` is moved to `OpenConnect
+Menu` on first launch (`AppPaths`), which carries the saved connections, logs
+and the Chrome login profile. Deliberately unchanged:
+- the bundle identifiers (fixed by the provisioning profiles);
+- the retired helper's identifiers (`com.claudiosv.pulse-vpn-menu.helper`,
+  `PulseVPNMenuHelper`), which name the old service to remove;
+- the `pulse-vpn-menu-notarytool` keychain profile, a stored credential that
+  can only be recreated with `notarytool store-credentials` and an app-specific
+  password;
+- the `PULSE_…` environment variables in `build.sh` and `notarize.sh`, and the
+  repository directory name.
 
 ### 11. Tests for the app target (Done)
 
@@ -189,7 +205,7 @@ The tunnel side has unit tests; the app has none. Worth covering first:
 `ConnectionProfile` decoding (including the `vpn-slice` migration),
 `isValidRoute`, `isValidAddress`, `isValidDomain`.
 
-Done: `Tests/PulseVPNMenuTests`.
+Done: `Tests/OpenConnectMenuTests`.
 
 ### 12. Universal build
 

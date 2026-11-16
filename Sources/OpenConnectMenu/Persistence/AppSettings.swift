@@ -2,7 +2,7 @@ import Foundation
 
 /// Global, app-wide preferences (as opposed to per-connection settings on
 /// `ConnectionProfile`), persisted as JSON at
-/// ~/Library/Application Support/Pulse VPN Menu/settings.json.
+/// ~/Library/Application Support/OpenConnect Menu/settings.json.
 @MainActor
 final class AppSettings: ObservableObject {
     static let defaultStatsPollInterval: TimeInterval = 5

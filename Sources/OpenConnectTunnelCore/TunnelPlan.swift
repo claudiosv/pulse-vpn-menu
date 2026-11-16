@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import NetworkExtension
 import OpenConnectKit
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 
 /// The addresses, routes and DNS for one tunnel, worked out from what the
 /// server assigned and the connection's routing options. This is the job the

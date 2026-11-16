@@ -4,7 +4,13 @@ import Foundation
 enum AppPaths {
     static let appSupportDir: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("Pulse VPN Menu", isDirectory: true)
+        let dir = base.appendingPathComponent("OpenConnect Menu", isDirectory: true)
+        // The app used to be called "Pulse VPN Menu": carry its saved
+        // connections, logs and Chrome login profile over, once.
+        let old = base.appendingPathComponent("Pulse VPN Menu", isDirectory: true)
+        if FileManager.default.fileExists(atPath: old.path), !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.moveItem(at: old, to: dir)
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()

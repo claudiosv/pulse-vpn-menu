@@ -2,7 +2,7 @@ import Foundation
 import Network
 import NetworkExtension
 import OpenConnectKit
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 import os
 
 /// The packet tunnel provider: one instance per tunnel start, created by the
@@ -13,7 +13,7 @@ import os
 ///
 /// The Objective-C name is what `NEProviderClasses` in the extension's
 /// Info.plist refers to.
-@objc(PulseVPNPacketTunnelProvider)
+@objc(OpenConnectPacketTunnelProvider)
 public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Sendable {
     private let session = TunnelSession()
     private let logger = Logger(subsystem: TunnelConstants.extensionBundleIdentifier, category: "provider")
@@ -51,7 +51,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
         guard let configuration = TunnelConfiguration(providerConfiguration: saved) else {
             logger.error("No readable TunnelConfiguration in the VPN configuration")
             completionHandler(Self.error(
-                EINVAL, "This VPN configuration can't be read. Open Pulse VPN Menu and save the connection again."))
+                EINVAL, "This VPN configuration can't be read. Open OpenConnect Menu and save the connection again."))
             return
         }
 
@@ -71,7 +71,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
                 guard lock.withLock({ take(&pendingConfiguration) }) != nil else { return }
                 session.fail(
                     exitCode: TunnelConstants.needsLoginExitCode,
-                    message: "Sign-in required: Pulse VPN Menu did not sign in. Open it and connect again.")
+                    message: "Sign-in required: OpenConnect Menu did not sign in. Open it and connect again.")
                 sessionEnded(TunnelConstants.needsLoginExitCode)
             }
             return
@@ -306,11 +306,11 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
 
     private static func reason(for rc: Int32, status: SessionStatus) -> String {
         if let failure = status.certFailure {
-            return "The server's certificate is not trusted (\(failure.reason)). Connect from Pulse VPN Menu to review it."
+            return "The server's certificate is not trusted (\(failure.reason)). Connect from OpenConnect Menu to review it."
         }
         switch rc {
         case TunnelConstants.needsLoginExitCode:
-            return "Sign-in required. Open Pulse VPN Menu to connect."
+            return "Sign-in required. Open OpenConnect Menu to connect."
         case -EPERM:
             return "The server rejected the login, or it has expired."
         case -EPIPE:

@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import Testing
 
-@testable import PulseVPNTunnelCore
+@testable import OpenConnectTunnelCore
 
 /// Throughput of `PacketBridge` on its own: how fast packets cross the
 /// socket pair between the system's packet flow and libopenconnect. It leaves

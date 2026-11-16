@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// they're now tabs of `MainWindowView`, so the menu items below all
     /// raise this same window and just select a different tab.
     private lazy var mainWindow: NSWindow = {
-        let window = makeWindow(title: "Pulse VPN Menu", minSize: NSSize(width: 720, height: 620)) {
+        let window = makeWindow(title: "OpenConnect Menu", minSize: NSSize(width: 720, height: 620)) {
             MainWindowView(appState: self.appState)
                 .environmentObject(self.appState.connectionStore)
                 .environmentObject(self.appState.appSettings)
@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        let quit = actionItem(title: "Quit Pulse VPN Menu") { [weak self] in self?.quit() }
+        let quit = actionItem(title: "Quit OpenConnect Menu") { [weak self] in self?.quit() }
         quit.keyEquivalent = "q"
         appMenu.addItem(quit)
         appItem.submenu = appMenu
@@ -395,7 +395,7 @@ private struct MenuHeaderView: View {
     }
 
     private var title: String {
-        guard let name = appState.activeProfile?.name, !name.isEmpty else { return "Pulse VPN" }
+        guard let name = appState.activeProfile?.name, !name.isEmpty else { return "OpenConnect" }
         return name
     }
 

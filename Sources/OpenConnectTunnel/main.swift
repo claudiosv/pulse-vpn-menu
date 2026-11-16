@@ -1,6 +1,6 @@
 import Foundation
 import NetworkExtension
-import PulseVPNTunnelCore
+import OpenConnectTunnelCore
 
 // The packet tunnel system extension. The system launches it (as root, in
 // the app sandbox) when a VPN configuration that names this bundle starts,

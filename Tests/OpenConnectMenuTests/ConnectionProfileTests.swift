@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import PulseVPNMenu
+@testable import OpenConnectMenu
 
 @Suite struct ConnectionProfileValidationTests {
     @Test func acceptsAddressesAndRejectsTheRest() {

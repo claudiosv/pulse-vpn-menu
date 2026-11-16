@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import Darwin
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 
 enum ConnectExitOutcome {
     case up

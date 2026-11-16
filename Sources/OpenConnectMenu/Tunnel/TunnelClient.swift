@@ -1,6 +1,6 @@
 import Foundation
 import NetworkExtension
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 import notify
 
 enum TunnelClientError: Error, CustomStringConvertible {

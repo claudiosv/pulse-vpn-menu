@@ -1,4 +1,4 @@
-# Pulse VPN Menu — instructions for Claude
+# OpenConnect Menu — instructions for Claude
 
 ## After every commit: build, install, relaunch
 
@@ -9,9 +9,9 @@ without asking:
 1. `./build.sh --notarize` (several minutes: run it in the background). The
    app stays running meanwhile.
 2. Stop the running app: `kill -TERM` the
-   `/Applications/Pulse VPN Menu.app/Contents/MacOS/PulseVPNMenu` process
+   `/Applications/OpenConnect Menu.app/Contents/MacOS/OpenConnectMenu` process
    and wait for it to exit. (An AppleScript `quit` is refused.)
-3. Replace `/Applications/Pulse VPN Menu.app` with `dist/Pulse VPN Menu.app`
+3. Replace `/Applications/OpenConnect Menu.app` with `dist/OpenConnect Menu.app`
    and `open` it.
 4. Confirm it is running and report the build number.
 

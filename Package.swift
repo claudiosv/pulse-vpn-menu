@@ -5,7 +5,7 @@ import PackageDescription
 let oc = "\(Context.packageDirectory)/vendor/openconnect"
 
 let package = Package(
-    name: "PulseVPNMenu",
+    name: "OpenConnectMenu",
     platforms: [
         .macOS(.v27)
     ],
@@ -15,16 +15,16 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "PulseVPNTunnelProtocol",
-            path: "Sources/PulseVPNTunnelProtocol"
+            name: "OpenConnectTunnelProtocol",
+            path: "Sources/OpenConnectTunnelProtocol"
         ),
         .executableTarget(
-            name: "PulseVPNMenu",
+            name: "OpenConnectMenu",
             dependencies: [
-                "PulseVPNTunnelProtocol",
+                "OpenConnectTunnelProtocol",
                 .product(name: "ChromeCDP", package: "ChromeCDP"),
             ],
-            path: "Sources/PulseVPNMenu",
+            path: "Sources/OpenConnectMenu",
             linkerSettings: [
                 .linkedFramework("NetworkExtension"),
                 .linkedFramework("SystemExtensions"),
@@ -52,19 +52,19 @@ let package = Package(
             path: "Sources/OCShimProbe"
         ),
         // Everything the packet tunnel provider does, as a library so it
-        // can be tested; PulseVPNTunnel is the system extension's executable.
+        // can be tested; OpenConnectTunnel is the system extension's executable.
         .target(
-            name: "PulseVPNTunnelCore",
-            dependencies: ["PulseVPNTunnelProtocol", "OpenConnectKit"],
-            path: "Sources/PulseVPNTunnelCore",
+            name: "OpenConnectTunnelCore",
+            dependencies: ["OpenConnectTunnelProtocol", "OpenConnectKit"],
+            path: "Sources/OpenConnectTunnelCore",
             linkerSettings: [
                 .linkedFramework("NetworkExtension")
             ]
         ),
         .executableTarget(
-            name: "PulseVPNTunnel",
-            dependencies: ["PulseVPNTunnelCore"],
-            path: "Sources/PulseVPNTunnel"
+            name: "OpenConnectTunnel",
+            dependencies: ["OpenConnectTunnelCore"],
+            path: "Sources/OpenConnectTunnel"
         ),
         .testTarget(
             name: "OpenConnectKitTests",
@@ -72,14 +72,14 @@ let package = Package(
             path: "Tests/OpenConnectKitTests"
         ),
         .testTarget(
-            name: "PulseVPNMenuTests",
-            dependencies: ["PulseVPNMenu", "PulseVPNTunnelProtocol"],
-            path: "Tests/PulseVPNMenuTests"
+            name: "OpenConnectMenuTests",
+            dependencies: ["OpenConnectMenu", "OpenConnectTunnelProtocol"],
+            path: "Tests/OpenConnectMenuTests"
         ),
         .testTarget(
-            name: "PulseVPNTunnelTests",
-            dependencies: ["PulseVPNTunnelCore", "PulseVPNTunnelProtocol", "OpenConnectKit"],
-            path: "Tests/PulseVPNTunnelTests"
+            name: "OpenConnectTunnelTests",
+            dependencies: ["OpenConnectTunnelCore", "OpenConnectTunnelProtocol", "OpenConnectKit"],
+            path: "Tests/OpenConnectTunnelTests"
         )
     ]
 )

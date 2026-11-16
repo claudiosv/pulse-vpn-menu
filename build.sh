@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build, bundle, and codesign "Pulse VPN Menu.app", including its packet
-# tunnel system extension (PulseVPNTunnel, a Network Extension the app
+# Build, bundle, and codesign "OpenConnect Menu.app", including its packet
+# tunnel system extension (OpenConnectTunnel, a Network Extension the app
 # installs through OSSystemExtensionRequest).
 #
-# Usage: ./build.sh            build -> dist/Pulse VPN Menu.app
+# Usage: ./build.sh            build -> dist/OpenConnect Menu.app
 #        ./build.sh --install  also install to /Applications
 #        ./build.sh --notarize also notarize + staple (see notarize.sh)
 #
@@ -18,10 +18,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="Pulse VPN Menu"
+APP_NAME="OpenConnect Menu"
 BUNDLE_ID="ai.claudio.openconnect"
-EXECUTABLE_NAME="PulseVPNMenu"
-TUNNEL_EXECUTABLE_NAME="PulseVPNTunnel"
+EXECUTABLE_NAME="OpenConnectMenu"
+TUNNEL_EXECUTABLE_NAME="OpenConnectTunnel"
 # Must match TunnelConstants.extensionBundleIdentifier.
 TUNNEL_BUNDLE_ID="ai.claudio.openconnect.networkextension"
 TEAM_ID="5HN43G3472"
@@ -136,8 +136,8 @@ PLIST
 
 # NEMachServiceName must be prefixed with one of the app groups in
 # Resources/Entitlements/tunnel.entitlements. NEProviderClasses names the
-# provider by its Objective-C name: @objc(PulseVPNPacketTunnelProvider) in
-# Sources/PulseVPNTunnelCore/PacketTunnelProvider.swift.
+# provider by its Objective-C name: @objc(OpenConnectPacketTunnelProvider) in
+# Sources/OpenConnectTunnelCore/PacketTunnelProvider.swift.
 echo "==> Writing the system extension's Info.plist"
 cat > "${TUNNEL_BUNDLE}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -173,7 +173,7 @@ cat > "${TUNNEL_BUNDLE}/Contents/Info.plist" <<PLIST
         <key>NEProviderClasses</key>
         <dict>
             <key>com.apple.networkextension.packet-tunnel</key>
-            <string>PulseVPNPacketTunnelProvider</string>
+            <string>OpenConnectPacketTunnelProvider</string>
         </dict>
     </dict>
 </dict>

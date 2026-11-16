@@ -1,5 +1,5 @@
 import Foundation
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 import SystemExtensions
 
 enum ExtensionActivation {
@@ -21,7 +21,7 @@ enum ExtensionActivationError: Error, CustomStringConvertible {
             let nsError = error as NSError
             if nsError.domain == OSSystemExtensionErrorDomain,
                nsError.code == OSSystemExtensionError.unsupportedParentBundleLocation.rawValue {
-                return "The network extension can only be installed when Pulse VPN Menu is in the Applications folder."
+                return "The network extension can only be installed when OpenConnect Menu is in the Applications folder."
             }
             return "Could not activate the network extension: \(error.localizedDescription)"
         }

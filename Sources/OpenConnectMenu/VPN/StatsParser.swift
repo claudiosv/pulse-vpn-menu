@@ -1,5 +1,5 @@
 import Foundation
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 
 /// One stats sample. Byte/packet counters are cumulative for the session.
 /// Mirrors Python's `stats.py`'s `VpnStats`.

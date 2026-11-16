@@ -9,7 +9,7 @@ import AppKit
 /// .applicationDidFinishLaunching` explicitly creates (the status item),
 /// exactly like the tunnel extension's own `main.swift` entry point.
 @main
-enum PulseVPNMenuMain {
+enum OpenConnectMenuMain {
     static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()

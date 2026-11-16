@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 import Testing
-@testable import PulseVPNTunnelCore
+@testable import OpenConnectTunnelCore
 
 /// Stands in for `NEPacketTunnelFlow`: hands out queued packets one read at
 /// a time and records what is written back.

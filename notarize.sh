@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Notarize and staple a signed Pulse VPN Menu.app (must be signed with a "Developer ID
+# Notarize and staple a signed OpenConnect Menu.app (must be signed with a "Developer ID
 # Application" identity — see build.sh). Requires notarization
 # credentials already stored under a keychain profile; see --store-credentials
 # below for a one-time setup helper.
 #
 # Usage:
-#   ./notarize.sh [path-to-app]                     (default: dist/Pulse VPN Menu.app)
+#   ./notarize.sh [path-to-app]                     (default: dist/OpenConnect Menu.app)
 #   ./notarize.sh --store-credentials <key.p8> <key-id> <issuer-id>
 #
 # The profile name can be overridden with PULSE_NOTARY_PROFILE (default:
@@ -26,7 +26,7 @@ if [[ "${1:-}" == "--store-credentials" ]]; then
   exit 0
 fi
 
-APP="${1:-$ROOT/dist/Pulse VPN Menu.app}"
+APP="${1:-$ROOT/dist/OpenConnect Menu.app}"
 if [[ ! -d "$APP" ]]; then
   echo "✗ App bundle not found at $APP" >&2
   exit 1

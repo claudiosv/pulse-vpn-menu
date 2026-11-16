@@ -1,7 +1,7 @@
 import Foundation
 
 /// Loads/saves the list of `ConnectionProfile`s as JSON at
-/// ~/Library/Application Support/Pulse VPN Menu/connections.json.
+/// ~/Library/Application Support/OpenConnect Menu/connections.json.
 @MainActor
 final class ConnectionStore: ObservableObject {
     @Published private(set) var profiles: [ConnectionProfile] = []

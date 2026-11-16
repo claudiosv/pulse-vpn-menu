@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import PulseVPNTunnelCore
+@testable import OpenConnectTunnelCore
 
 @Suite struct SystemTrustTests {
     @Test func emptyChainIsNotTrusted() {

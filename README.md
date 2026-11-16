@@ -1,4 +1,4 @@
-# Pulse VPN Menu
+# OpenConnect Menu
 
 A native Swift macOS menu bar app for connecting to an Ivanti/Pulse Secure
 VPN via `openconnect`. Reimplements the behavior of
@@ -31,7 +31,7 @@ prompts once to pin its fingerprint for that connection.
 ## Building
 
 ```shell
-./build.sh                        # -> dist/Pulse VPN Menu.app, codesigned
+./build.sh                        # -> dist/OpenConnect Menu.app, codesigned
 ./build.sh --notarize --install   # what you need to actually run it
 ```
 
@@ -42,7 +42,7 @@ signs it with the `Developer ID Application` identity in your keychain. macOS
 only installs the extension from a notarized app in `/Applications`.
 LSUIElement is set, so it runs as a menubar-only agent with no Dock icon —
 that only applies once it's run from inside the assembled `.app`, not from
-the raw `.build/release/PulseVPNMenu` binary.
+the raw `.build/release/OpenConnectMenu` binary.
 
 ## Usage
 
@@ -72,7 +72,7 @@ the raw `.build/release/PulseVPNMenu` binary.
 
 ## Project layout
 
-See `Sources/PulseVPNMenu/`, organized by responsibility:
+See `Sources/OpenConnectMenu/`, organized by responsibility:
 - `App/` — the `MenuBarExtra` app entry point and menu content.
 - `Networking/` — the from-scratch Chrome DevTools Protocol client used to
   capture the DSID cookie (no external dependencies — built on

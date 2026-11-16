@@ -1,9 +1,9 @@
 import Foundation
 import NetworkExtension
 import OpenConnectKit
-import PulseVPNTunnelProtocol
+import OpenConnectTunnelProtocol
 import Testing
-@testable import PulseVPNTunnelCore
+@testable import OpenConnectTunnelCore
 
 @Suite struct TunnelPlanTests {
     private let server = OpenConnectNetworkConfig(

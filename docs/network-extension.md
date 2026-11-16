@@ -44,7 +44,7 @@ SIP and run `systemextensionsctl developer on` (which also lifts the
 
 1. **Connect** asks to allow the extension: System Settings > General > Login
    Items & Extensions > Network Extensions. Allow it and click Connect again.
-2. macOS asks to allow "Pulse VPN Menu" to add VPN configurations. Allow.
+2. macOS asks to allow "OpenConnect Menu" to add VPN configurations. Allow.
 3. Log in in the Chrome window as before.
 
 Every build has a new build number, so an updated app replaces the installed
@@ -57,13 +57,13 @@ Useful commands: `systemextensionsctl list`,
 
 | Piece | Role |
 |---|---|
-| `Sources/PulseVPNTunnel` | The system extension's executable: `NEProvider.startSystemExtensionMode()`. |
-| `Sources/PulseVPNTunnelCore/PacketTunnelProvider.swift` | The provider. Starts the libopenconnect session, applies network settings, answers the app's messages. |
+| `Sources/OpenConnectTunnel` | The system extension's executable: `NEProvider.startSystemExtensionMode()`. |
+| `Sources/OpenConnectTunnelCore/PacketTunnelProvider.swift` | The provider. Starts the libopenconnect session, applies network settings, answers the app's messages. |
 | `…/TunnelPlan.swift` | Turns what the server assigned (addresses, split routes, DNS) plus the connection's routing options into `NEPacketTunnelNetworkSettings`. Replaces the vpnc-script and the app's `route` calls. |
 | `…/PacketBridge.swift` | Moves packets between `packetFlow` and libopenconnect over a datagram socket pair, adding/stripping the 4-byte utun address-family header libopenconnect expects. |
 | `…/TunnelSession.swift`, `LogRing.swift` | Hosts the single session; status, once-a-second counter sampling, in-memory log. |
-| `Sources/PulseVPNTunnelProtocol` | Shared by app and extension: identifiers, `TunnelConfiguration`, `TunnelRequest`/`TunnelReply`, `SessionStatus`. |
-| `Sources/PulseVPNMenu/Tunnel/TunnelClient.swift` | App side: one `NETunnelProviderManager` per connection, start/stop, polling the provider. |
+| `Sources/OpenConnectTunnelProtocol` | Shared by app and extension: identifiers, `TunnelConfiguration`, `TunnelRequest`/`TunnelReply`, `SessionStatus`. |
+| `Sources/OpenConnectMenu/Tunnel/TunnelClient.swift` | App side: one `NETunnelProviderManager` per connection, start/stop, polling the provider. |
 | `…/SystemExtensionActivator.swift` | Installs/updates the extension (`OSSystemExtensionRequest`). |
 | `Resources/Entitlements/` | Entitlements for the app and the extension. |
 
@@ -150,6 +150,6 @@ Things to watch on the first real run:
 
 The old root helper is no longer shipped or used. To remove a previously
 approved one: System Settings > General > Login Items & Extensions, turn off
-"Pulse VPN Menu" under *Allow in the Background*; then
+"OpenConnect Menu" under *Allow in the Background*; then
 `sudo launchctl bootout system/com.claudiosv.pulse-vpn-menu.helper` if it is
 still loaded.
