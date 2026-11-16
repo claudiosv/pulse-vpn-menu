@@ -26,13 +26,19 @@ final class StatsHistory: ObservableObject {
     /// Records the counters from a `SessionSnapshot`, stamped with when the
     /// helper sampled them (not when we happened to read them).
     func append(_ snapshot: SessionSnapshot) {
-        samples.append(VpnStats(
+        append(VpnStats(
             timestamp: snapshot.sampledAt,
             rxPackets: Int(clamping: snapshot.rxPackets),
             rxBytes: Int(clamping: snapshot.rxBytes),
             txPackets: Int(clamping: snapshot.txPackets),
             txBytes: Int(clamping: snapshot.txBytes)
         ))
+    }
+
+    /// Records an already-built sample (demo mode's simulated counters have
+    /// no `SessionSnapshot` behind them; see `DemoMode`).
+    func append(_ sample: VpnStats) {
+        samples.append(sample)
         if samples.count > maxSamples {
             samples.removeFirst(samples.count - maxSamples)
         }

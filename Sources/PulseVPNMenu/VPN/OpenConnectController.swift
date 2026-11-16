@@ -94,9 +94,22 @@ final class OpenConnectController: ObservableObject {
 
     static let tunnelTimeout: TimeInterval = 30
 
+    /// Demo mode's stand-in for `runtimeState`: when the simulated session
+    /// started, plus the counter generator feeding `stats`. Nil whenever
+    /// the simulated tunnel is "down" (and always nil outside demo mode).
+    private var demoStartedAt: Date?
+    private var demoTraffic = DemoTraffic()
+
     init(logStore: LogStore, appSettings: AppSettings) {
         self.logStore = logStore
         self.appSettings = appSettings
+        // Demo mode must not follow the tunnel extension at all: any real
+        // session belongs to a real instance of the app.
+        if DemoMode.isEnabled {
+            logStore.append("Demo mode: simulating a VPN connection; nothing real is touched.\n")
+            startDemoSession(profileID: nil, alreadyRunning: true)
+            return
+        }
         let client = TunnelClient.shared
         client.onStatus = { [weak self] status in self?.handle(status) }
         client.onLogLines = { lines in SessionLogFile.append(lines) }
@@ -170,7 +183,7 @@ final class OpenConnectController: ObservableObject {
     /// session that died on its own is noticed by
     /// `handleUnexpectedExitIfNeeded`, which clears `runtimeState`.
     func isConnected() -> Bool {
-        runtimeState != nil
+        runtimeState != nil || demoStartedAt != nil
     }
 
     /// When the VPN session currently being tracked was started. After an
@@ -183,7 +196,7 @@ final class OpenConnectController: ObservableObject {
     /// (a subprocess spawn, a synchronous XPC call) crashes SwiftUI's
     /// AttributeGraph ("modifying state during view update").
     var connectedSince: Date? {
-        runtimeState?.startedAt
+        demoStartedAt ?? runtimeState?.startedAt
     }
 
     /// e.g. "utun6, 172.25.228.228", from the interface the system created
@@ -191,6 +204,14 @@ final class OpenConnectController: ObservableObject {
     var connectedInterfaceDescription: String? {
         guard isConnected(), let tunnel else { return nil }
         return tunnel.name.map { "\($0), \(tunnel.address)" } ?? tunnel.address
+    }
+
+    /// Just the tunnel's address, e.g. "172.25.228.228", for the menu
+    /// header, which has no room for the interface name. A plain property
+    /// read, so (like `connectedSince`) it's safe from a view body.
+    var connectedAddress: String? {
+        guard isConnected() else { return nil }
+        return tunnel?.address
     }
 
     // MARK: - Connect
@@ -202,6 +223,13 @@ final class OpenConnectController: ObservableObject {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
+
+        if DemoMode.isEnabled {
+            logStore.append("Demo mode: pretending to connect to \(profile.name)…\n")
+            try? await Task.sleep(for: .milliseconds(1200))
+            startDemoSession(profileID: profile.id, alreadyRunning: false)
+            return
+        }
 
         // Deliberately re-checked on every connect attempt rather than gated
         // behind a one-shot flag: it is cheap once the extension is active,
@@ -316,6 +344,15 @@ final class OpenConnectController: ObservableObject {
     // MARK: - Disconnect / reconnect
 
     func disconnect() async {
+        if DemoMode.isEnabled {
+            guard demoStartedAt != nil, !isBusy else { return }
+            isBusy = true
+            defer { isBusy = false }
+            try? await Task.sleep(for: .milliseconds(600))
+            stopDemoSession()
+            logStore.append("Demo mode: simulated session stopped.\n")
+            return
+        }
         guard runtimeState != nil else { return }
         guard !isBusy else { return }
         isBusy = true
@@ -335,6 +372,15 @@ final class OpenConnectController: ObservableObject {
     }
 
     func reconnect() async throws {
+        if DemoMode.isEnabled {
+            guard demoStartedAt != nil, !isBusy else { return }
+            isBusy = true
+            defer { isBusy = false }
+            // Like a real reconnect: same session, counters keep running.
+            try? await Task.sleep(for: .milliseconds(1500))
+            logStore.append("Demo mode: simulated reconnect.\n")
+            return
+        }
         guard let state = runtimeState else { return }
         guard !isBusy else { return }
         isBusy = true
@@ -547,6 +593,55 @@ final class OpenConnectController: ObservableObject {
     private func stopStatsTimer() {
         statsTimerTask?.cancel()
         statsTimerTask = nil
+    }
+
+    // MARK: - Demo mode
+
+    /// Brings the simulated tunnel "up" (see `DemoMode`). `alreadyRunning`
+    /// is the launch case: the session claims to be hours old and the graph
+    /// history is prefilled, as if the app had reattached to a tunnel that
+    /// was up all along. A Connect click instead starts from zero, so the
+    /// graph filling in from empty can be watched too.
+    private func startDemoSession(profileID: UUID?, alreadyRunning: Bool) {
+        stopStatsTimer()
+        stats.clear()
+
+        let now = Date()
+        let interval = appSettings.statsPollInterval
+        if alreadyRunning {
+            demoTraffic = DemoTraffic(rxBytes: DemoMode.launchRxBytes, txBytes: DemoMode.launchTxBytes)
+            for step in (0..<DemoMode.launchSampleCount).reversed() {
+                demoTraffic.advance(by: interval)
+                stats.append(demoTraffic.sample(at: now.addingTimeInterval(-Double(step) * interval)))
+            }
+            demoStartedAt = now.addingTimeInterval(-DemoMode.launchSessionAge)
+        } else {
+            demoTraffic = DemoTraffic()
+            stats.append(demoTraffic.sample(at: now))
+            demoStartedAt = now
+        }
+        tunnel = (DemoMode.tunnel.name, DemoMode.tunnel.address)
+        connectedProfileID = profileID
+
+        statsTimerTask = Task { [weak self] in
+            var last = Date()
+            while !Task.isCancelled {
+                guard let self else { return }
+                try? await Task.sleep(for: .seconds(self.appSettings.statsPollInterval))
+                if Task.isCancelled { break }
+                let tick = Date()
+                self.demoTraffic.advance(by: tick.timeIntervalSince(last))
+                self.stats.append(self.demoTraffic.sample(at: tick))
+                last = tick
+            }
+        }
+    }
+
+    private func stopDemoSession() {
+        stopStatsTimer()
+        demoStartedAt = nil
+        connectedProfileID = nil
+        tunnel = nil
     }
 
     private func runPostCommand(_ post: String) {

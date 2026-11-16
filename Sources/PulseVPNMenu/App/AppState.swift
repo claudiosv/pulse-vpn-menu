@@ -57,11 +57,14 @@ final class AppState: ObservableObject {
         // Editing one updates (and, if need be, creates) them; at launch
         // they are only created if the user has allowed that before, so
         // opening the app never raises the system's permission prompt.
-        connectionStore.onProfilesEdited = { [weak connectionStore] in
-            guard let profiles = connectionStore?.profiles else { return }
-            Task { await TunnelClient.shared.sync(profiles: profiles, createMissing: true) }
+        // (Not in demo mode, which must leave everything real alone.)
+        if !DemoMode.isEnabled {
+            connectionStore.onProfilesEdited = { [weak connectionStore] in
+                guard let profiles = connectionStore?.profiles else { return }
+                Task { await TunnelClient.shared.sync(profiles: profiles, createMissing: true) }
+            }
+            Task { await TunnelClient.shared.sync(profiles: connectionStore.profiles, createMissing: nil) }
         }
-        Task { await TunnelClient.shared.sync(profiles: connectionStore.profiles, createMissing: nil) }
 
         refresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.statusRefreshInterval, repeats: true) { [weak self] _ in

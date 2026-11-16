@@ -20,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var cancellables: Set<AnyCancellable> = []
 
+    /// The hosted `MenuHeaderView`. Kept so its menu item can be resized on
+    /// each open: the header is one line while disconnected and grows the
+    /// detail line and traffic bars while connected.
+    private var headerView: NSView!
     private var connectItem: NSMenuItem!
     private var disconnectItem: NSMenuItem!
     private var reconnectItem: NSMenuItem!
@@ -116,11 +120,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let header = NSHostingView(
             rootView: MenuHeaderView(
                 appState: appState,
+                controller: appState.controller,
                 stats: appState.controller.stats,
                 connectionStore: appState.connectionStore
             )
         )
         header.frame.size = header.fittingSize
+        headerView = header
         let headerItem = NSMenuItem()
         headerItem.view = header
         menu.addItem(headerItem)
@@ -176,6 +182,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Connect item's title/action/submenu (the profile list can change any
     /// time via Settings) and every item's enabled state.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        headerView.layoutSubtreeIfNeeded()
+        headerView.frame.size = headerView.fittingSize
+
         let profiles = appState.connectionStore.profiles
         let connected = appState.isConnected
         let busy = appState.controller.isBusy
@@ -301,45 +310,97 @@ private final class ActionSleeve: NSObject {
     @objc func invoke() { action() }
 }
 
-/// The one non-native piece of the menu: status text + live traffic graph,
-/// embedded via `NSHostingView`. Declared as its own `View` (rather than an
-/// inline literal at the `NSHostingView` call site) specifically so
-/// `@ObservedObject` observation works and the hosted view keeps updating
-/// in place as `AppState`/`StatsHistory` publish changes, exactly like it
-/// did as SwiftUI popover content before.
+/// The one non-native piece of the menu: the active connection's row,
+/// embedded via `NSHostingView`. Laid out like a connection row with
+/// detail lines under it — a lock badge, the profile name and state, then
+/// (only while connected) interface, cumulative totals, session duration,
+/// and a strip of mirrored traffic bars. Declared as its own `View`
+/// (rather than an inline literal at the `NSHostingView` call site)
+/// specifically so `@ObservedObject` observation works and the hosted view
+/// keeps updating in place as `AppState`/`StatsHistory` publish changes,
+/// exactly like it did as SwiftUI popover content before.
 private struct MenuHeaderView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject var controller: OpenConnectController
     @ObservedObject var stats: StatsHistory
     @ObservedObject var connectionStore: ConnectionStore
 
+    /// Badge width plus the gap after it, so the detail lines and graph
+    /// start at the profile name's leading edge.
+    private static let badgeSize: CGFloat = 16
+    private static let badgeGap: CGFloat = 7
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(appState.isConnected ? Color.green : Color.secondary.opacity(0.6))
-                    .frame(width: 9, height: 9)
-                Text(appState.statusText)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-
-            if let profile = appState.activeProfile {
-                Text(profile.vpnURL)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: Self.badgeGap) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: Self.badgeSize, height: Self.badgeSize)
+                    .background(Circle().fill(appState.isConnected ? Color.green : Color.gray))
+                Text(title)
+                    .font(.system(size: 13))
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                    .padding(.horizontal, 14)
-                    .padding(.leading, 17)
-                    .padding(.top, 2)
+                    .truncationMode(.tail)
+                Spacer(minLength: 8)
+                Text(stateText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
-            StatsGraphView(stats: stats, style: .menu)
-                .padding(.horizontal, 6)
-                .padding(.top, 4)
-                .padding(.bottom, 4)
+            if appState.isConnected {
+                VStack(alignment: .leading, spacing: 5) {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        HStack(spacing: 0) {
+                            Text(detailText)
+                                .lineLimit(1)
+                            Spacer(minLength: 12)
+                            Text(durationText)
+                        }
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                    }
+
+                    StatsGraphView(stats: stats, style: .menu)
+                }
+                .padding(.leading, Self.badgeSize + Self.badgeGap)
+            }
         }
-        .frame(width: 300)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+        .padding(.bottom, appState.isConnected ? 8 : 6)
+        // At least a normal menu's width, but as wide as the detail line
+        // needs: the address and totals must never be truncated, and how
+        // wide they run depends on the address and how large the counters
+        // have grown. The hosting view (and so the menu) is re-fitted to
+        // this on each open; see `menuNeedsUpdate`.
+        .frame(minWidth: 300)
+        .fixedSize()
+    }
+
+    private var title: String {
+        guard let name = appState.activeProfile?.name, !name.isEmpty else { return "Pulse VPN" }
+        return name
+    }
+
+    private var stateText: String {
+        if controller.isBusy { return "Working…" }
+        return appState.isConnected ? "Connected" : "Disconnected"
+    }
+
+    /// "172.25.228.228   ↓ 261 MB ↑ 124 MB", dropping the address part
+    /// when the tunnel's address isn't known yet.
+    private var detailText: String {
+        let down = Traffic.bytes(Double(stats.current?.rxBytes ?? 0))
+        let up = Traffic.bytes(Double(stats.current?.txBytes ?? 0))
+        let totals = "↓ \(down) ↑ \(up)"
+        guard let address = controller.connectedAddress else { return totals }
+        return "\(address)   \(totals)"
+    }
+
+    private var durationText: String {
+        guard let since = controller.connectedSince else { return "" }
+        return Traffic.duration(Date().timeIntervalSince(since))
     }
 }
