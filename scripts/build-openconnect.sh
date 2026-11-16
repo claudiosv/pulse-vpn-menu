@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Build OpenSSL and libopenconnect from the git submodules in third_party/
-# into vendor/openconnect/, for build.sh to link into the helper (and bundle
-# the vpnc-script).
+# into vendor/openconnect/, for build.sh to link into the packet tunnel
+# system extension.
 #
 #   third_party/openssl        OpenSSL (a release tag)
 #   third_party/openconnect    libopenconnect
-#   third_party/vpnc-scripts   the vpnc-script bundled in the app
+#
+# No vpnc-script is built or bundled: the extension applies the tunnel's
+# routes and DNS through Network Extension instead.
 #
 # The pin for each is the commit the submodule points at, so a version bump
 # is an ordinary reviewable diff:
@@ -31,7 +33,6 @@ cd "$(dirname "$0")/.."
 
 OPENSSL_SRC="$PWD/third_party/openssl"
 OC_SRC="$PWD/third_party/openconnect"
-VPNC_SRC="$PWD/third_party/vpnc-scripts"
 
 OUT="$PWD/vendor/openconnect"
 CACHE="$PWD/vendor/.cache"
@@ -41,7 +42,7 @@ ARCHS="${OC_ARCHS:-$(uname -m)}"
 # ones are initialised: `submodule update` would reset a pin you've just
 # checked out to try. (Not --recursive: OpenSSL's own submodules are test
 # corpora we don't need.)
-for dep in openssl openconnect vpnc-scripts; do
+for dep in openssl openconnect; do
     [[ -e third_party/$dep/.git ]] && continue
     if [[ $dep == openssl ]]; then   # shallow: its full history is ~400 MB
         git submodule update --init --depth 1 third_party/$dep
@@ -53,12 +54,11 @@ done
 pinned() { git -C "$1" rev-parse HEAD; }
 OPENSSL_SHA="$(pinned "$OPENSSL_SRC")"
 OC_SHA="$(pinned "$OC_SRC")"
-VPNC_SHA="$(pinned "$VPNC_SRC")"
 
 # Building from a modified submodule is allowed (it's how you try a patch),
 # but never treated as cached.
 dirty="" ssl_dirty=""
-for dep in "$OPENSSL_SRC" "$OC_SRC" "$VPNC_SRC"; do
+for dep in "$OPENSSL_SRC" "$OC_SRC"; do
     if [[ -n "$(git -C "$dep" status --porcelain)" ]]; then
         echo "warning: ${dep#"$PWD/"} has local changes; building with them" >&2
         dirty="+dirty-$(date +%s)"
@@ -74,7 +74,7 @@ OPENSSL_OPTS=(no-shared no-tests no-apps no-docs no-module no-legacy no-engine n
               --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0)
 OC_CFLAGS="-O3 -mmacosx-version-min=27.0"
 
-STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12} vpnc-scripts@${VPNC_SHA:0:12}+${OPENSSL_OPTS[*]// /,}+$OC_CFLAGS$dirty $ARCHS"
+STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12}+${OPENSSL_OPTS[*]// /,}+$OC_CFLAGS$dirty $ARCHS"
 
 if [[ -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
     echo "==> libopenconnect ($(git -C "$OC_SRC" describe --tags)) already built"
@@ -152,8 +152,8 @@ for arch in $ARCHS; do
         # Hide Homebrew's .pc files so optional deps (p11-kit, ...) aren't
         # picked up; everything we want is passed explicitly below.
         export PKG_CONFIG_LIBDIR="$SRC/no-pc" PKG_CONFIG_PATH=""
-        # The compiled-in vpnc-script path is a placeholder: the app always
-        # passes `-s` (bundled script unless the profile sets its own).
+        # The compiled-in vpnc-script path is a placeholder: the shim never
+        # sets a script (see Sources/COpenConnectShim).
         # Pre-seeding the pkg-config results points configure at the static
         # archives instead of Homebrew's dylibs.
         ./configure --host="$arch-apple-darwin" \
@@ -179,7 +179,6 @@ for lib in libssl.a libcrypto.a; do
     if [[ ${#ins[@]} -gt 1 ]]; then lipo -create "${ins[@]}" -output "$OUT/lib/$lib"; else cp "${ins[0]}" "$OUT/lib/$lib"; fi
 done
 cp "$CACHE/build-${ARCHS%% *}/openconnect.h" "$OUT/include/openconnect.h"
-install -m 755 "$VPNC_SRC/vpnc-script" "$OUT/vpnc-script"
 cp "$CACHE/build-${ARCHS%% *}/COPYING.LGPL" "$OUT/COPYING.LGPL"
 echo "$STAMP" > "$OUT/.version"
 

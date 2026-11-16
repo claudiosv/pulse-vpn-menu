@@ -47,6 +47,21 @@ final class AppState: ObservableObject {
         controller.profileName = { [weak connectionStore] id in
             connectionStore?.profile(id: id)?.name
         }
+        // Switched on in System Settings > VPN: sign in and connect here.
+        controller.externalConnectRequested = { [weak self] id in
+            guard let self, let profile = self.connectionStore.profile(id: id) else { return }
+            self.connect(profile: profile)
+        }
+
+        // Each connection is also a VPN configuration in System Settings.
+        // Editing one updates (and, if need be, creates) them; at launch
+        // they are only created if the user has allowed that before, so
+        // opening the app never raises the system's permission prompt.
+        connectionStore.onProfilesEdited = { [weak connectionStore] in
+            guard let profiles = connectionStore?.profiles else { return }
+            Task { await TunnelClient.shared.sync(profiles: profiles, createMissing: true) }
+        }
+        Task { await TunnelClient.shared.sync(profiles: connectionStore.profiles, createMissing: nil) }
 
         refresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Self.statusRefreshInterval, repeats: true) { [weak self] _ in
@@ -90,7 +105,7 @@ final class AppState: ObservableObject {
     }
 
     var statusDetail: String {
-        if controller.isBusy { return "Talking to the VPN helper…" }
+        if controller.isBusy { return "Talking to the VPN extension…" }
         guard isConnected else {
             return connectionStore.profiles.isEmpty
                 ? "Add a connection to get started"

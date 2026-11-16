@@ -17,7 +17,7 @@ enum StatsGraphStyle {
 /// app only ever logged as text
 /// (`logger.info("Current stats: %s", str(self.stats.current))`). Plots
 /// download/upload throughput derived from the raw cumulative RX/TX
-/// counters the helper reports on each stats poll.
+/// counters the extension reports on each stats poll.
 ///
 /// This used to be forced into `.menu`-style `MenuBarExtra` content,
 /// rendered offscreen into a bitmap (since native `NSMenu` only knows how

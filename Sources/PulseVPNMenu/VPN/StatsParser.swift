@@ -1,5 +1,5 @@
 import Foundation
-import PulseVPNHelperProtocol
+import PulseVPNTunnelProtocol
 
 /// One stats sample. Byte/packet counters are cumulative for the session.
 /// Mirrors Python's `stats.py`'s `VpnStats`.
@@ -11,7 +11,7 @@ struct VpnStats: Equatable {
     var txBytes: Int
 }
 
-/// Rolling history of the helper's traffic-counter samples, mirroring
+/// Rolling history of the extension's traffic-counter samples, mirroring
 /// `stats.py`'s `StatsHistory`. Not actor/lock-guarded like the Python
 /// version since it's only ever touched on the main actor here (see
 /// `OpenConnectController`).

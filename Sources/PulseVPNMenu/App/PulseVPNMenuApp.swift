@@ -7,7 +7,7 @@ import AppKit
 /// windows. Driving `NSApplication` directly sidesteps the question:
 /// nothing appears at launch except what `AppDelegate
 /// .applicationDidFinishLaunching` explicitly creates (the status item),
-/// exactly like the privileged helper's own `main.swift` entry point.
+/// exactly like the tunnel extension's own `main.swift` entry point.
 @main
 enum PulseVPNMenuMain {
     static func main() {

@@ -4,8 +4,8 @@ import SwiftUI
 /// session stats + traffic graph, and a peek at recent log activity.
 ///
 /// Everything here reflects real state — `AppState.isConnected` (polled
-/// from the helper's session status), `OpenConnectController.isBusy`, the
-/// `StatsHistory` samples polled from the helper, and
+/// from the extension's session status), `OpenConnectController.isBusy`, the
+/// `StatsHistory` samples polled from the extension, and
 /// `LogStore`'s tail. Nothing is simulated.
 struct StatusView: View {
     @ObservedObject var appState: AppState

@@ -1,13 +1,6 @@
 import COpenConnectShim
 import Foundation
 
-public struct OpenConnectTunnel: Sendable {
-    public var address: String?
-    public var netmask: String?
-    public var gateway: String?
-    public var mtu: Int
-}
-
 /// Typed session state, read directly from libopenconnect (no log parsing).
 public struct OpenConnectSnapshot: Sendable, Equatable {
     public enum LinkState: Int32, Sendable {
@@ -29,8 +22,7 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
     public var txBytes: UInt64
     public var rxPackets: UInt64
     public var rxBytes: UInt64
-    /// The tunnel's interface name (e.g. `utun6`) and IPv4 address, once up.
-    public var interfaceName: String?
+    /// The tunnel's IPv4 address, once up.
     public var address: String?
 
     init(_ c: ocshim_snapshot) {
@@ -44,7 +36,6 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
         rxPackets = c.rx_pkts
         rxBytes = c.rx_bytes
         var c = c
-        interfaceName = Self.string(&c.ifname)
         address = Self.string(&c.address)
     }
 
@@ -60,7 +51,12 @@ public struct OpenConnectSnapshot: Sendable, Equatable {
 public struct OpenConnectHandlers: Sendable {
     /// One line of libopenconnect output, for display only.
     public var log: @Sendable (_ level: Int, _ line: String) -> Void
-    public var connected: @Sendable (OpenConnectTunnel) -> Void
+    /// The server accepted the session and assigned addresses. Apply them,
+    /// then return a datagram fd carrying the tunnel's packets with utun
+    /// framing (4-byte address family in network byte order, then one IP
+    /// packet), or a negative errno to abort. May block; the fd stays owned
+    /// by the caller, who closes it after the session exits.
+    public var configureTunnel: @Sendable (OpenConnectNetworkConfig) -> Int32
     /// Certificate failed validation and didn't match the pin; `hash` is the
     /// `pin-sha256:...` value to pass as `pinnedCert` to trust it.
     public var certRejected: @Sendable (_ reason: String, _ hash: String?) -> Void
@@ -70,19 +66,20 @@ public struct OpenConnectHandlers: Sendable {
 
     public init(
         log: @escaping @Sendable (Int, String) -> Void = { _, _ in },
-        connected: @escaping @Sendable (OpenConnectTunnel) -> Void = { _ in },
+        configureTunnel: @escaping @Sendable (OpenConnectNetworkConfig) -> Int32 = { _ in -ENOTSUP },
         certRejected: @escaping @Sendable (String, String?) -> Void = { _, _ in },
         stateChanged: @escaping @Sendable () -> Void = {}
     ) {
         self.log = log
-        self.connected = connected
+        self.configureTunnel = configureTunnel
         self.certRejected = certRejected
         self.stateChanged = stateChanged
     }
 }
 
-/// One libopenconnect session running in-process on its own thread. Needs
-/// root to create the utun device, so it belongs in the privileged helper.
+/// One libopenconnect session running in-process on its own thread. It
+/// creates no network interface and runs no script: `configureTunnel` supplies
+/// the packet fd, so it works inside a sandboxed Network Extension.
 /// Callbacks fire on the session thread.
 public final class EmbeddedOpenConnect: @unchecked Sendable {
     private let handlers: OpenConnectHandlers
@@ -103,7 +100,6 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
     public func start(
         url: String,
         cookie: String,
-        vpncScript: String?,
         pinnedCert: String? = nil,
         reconnectTimeout: Int32 = 30,
         dpdSeconds: Int32 = 5,
@@ -115,13 +111,9 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
                 me.handlers.log(Int(level), String(cString: msg!))
             },
-            connected: { ctx, addr, mask, gw, mtu in
+            configure: { ctx, config in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
-                me.handlers.connected(OpenConnectTunnel(
-                    address: addr.map { String(cString: $0) },
-                    netmask: mask.map { String(cString: $0) },
-                    gateway: gw.map { String(cString: $0) },
-                    mtu: Int(mtu)))
+                return me.handlers.configureTunnel(OpenConnectNetworkConfig(config!.pointee))
             },
             cert_rejected: { ctx, reason, hash in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
@@ -143,7 +135,7 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
         nonisolated(unsafe) let session = created
 
         let thread = Thread { [self] in
-            let rc = ocshim_run(session, url, cookie, vpncScript, pinnedCert,
+            let rc = ocshim_run(session, url, cookie, pinnedCert,
                                 reconnectTimeout, dpdSeconds, verbose ? 1 : 0)
             // Taking the lock waits out any in-flight cancel()/requestStats().
             self.lock.withLock { self.session = nil }

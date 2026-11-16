@@ -6,7 +6,7 @@ struct ConnectionEditView: View {
 
     @State private var name: String
     @State private var vpnURL: String
-    @State private var script: String
+    @State private var splitRoutes: String
     @State private var post: String
     @State private var noDefaultRoute: Bool
     @State private var debug: Bool
@@ -32,7 +32,7 @@ struct ConnectionEditView: View {
         self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
         self._vpnURL = State(initialValue: profile.vpnURL)
-        self._script = State(initialValue: profile.script ?? "")
+        self._splitRoutes = State(initialValue: profile.splitRoutes ?? "")
         self._post = State(initialValue: profile.post ?? "")
         self._noDefaultRoute = State(initialValue: profile.noDefaultRoute)
         self._debug = State(initialValue: profile.debug)
@@ -61,9 +61,9 @@ struct ConnectionEditView: View {
                         .autocorrectionDisabled()
                 }
                 Section("Advanced") {
-                    TextField("vpnc script", text: $script, prompt: Text("vpn-slice …"))
+                    TextField("Only route", text: $splitRoutes, prompt: Text("e.g. 169.237.0.0/16, 10.1.2.3 — blank for all traffic"))
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
-                    Toggle("Don't replace the default route", isOn: $noDefaultRoute)
+                    Toggle("Use the server's routes instead of sending all traffic", isOn: $noDefaultRoute)
                     Toggle("Verbose logging", isOn: $debug)
                     if let pinnedCertHash {
                         LabeledContent("Trusted certificate") {
@@ -93,7 +93,7 @@ struct ConnectionEditView: View {
                             id: profileID,
                             name: name.isEmpty ? "Untitled" : name,
                             vpnURL: vpnURL,
-                            script: script.isEmpty ? nil : script,
+                            splitRoutes: splitRoutes.isEmpty ? nil : splitRoutes,
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,

@@ -53,7 +53,7 @@ private final class Counter: @unchecked Sendable {
             changes.increment()
             if oc.snapshot() != nil { sawSnapshot.increment() }   // re-enters the wrapper
         }))
-        oc.start(url: "https://127.0.0.1:\(server.port)/", cookie: "x", vpncScript: nil) { _ in
+        oc.start(url: "https://127.0.0.1:\(server.port)/", cookie: "x") { _ in
             exited.signal()
         }
         Thread.sleep(forTimeInterval: 0.3)   // let the session thread set up its command pipe

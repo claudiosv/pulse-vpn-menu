@@ -4,22 +4,50 @@
 #include <stdint.h>
 
 /* Thin wrapper over libopenconnect for a cookie-authenticated Pulse session,
- * mirroring what openconnect's own main() does after authentication:
- * make_cstp_connection -> setup_tun_device (runs the vpnc-script) ->
- * setup_dtls -> mainloop. Everything blocking happens in ocshim_run();
- * the other entry points are safe to call from any thread. */
+ * mirroring what openconnect's own main() does after authentication, except
+ * that libopenconnect never creates a tun device or runs a vpnc-script:
+ * make_cstp_connection -> configure callback (the caller applies the network
+ * settings and hands back a packet fd) -> setup_tun_fd -> setup_dtls ->
+ * mainloop. That is what lets it run inside a sandboxed Network Extension.
+ * Everything blocking happens in ocshim_run(); the other entry points are
+ * safe to call from any thread. */
 
 typedef struct ocshim ocshim_t;
+
+/* What the server assigned, straight from libopenconnect's oc_ip_info.
+ * Everything except gateway_addr is server-provided text: validate it.
+ * All pointers are valid only for the duration of the configure call. */
+typedef struct {
+    const char *gateway_addr;     /* the VPN server's IP address */
+    const char *addr;             /* tunnel IPv4 address, or NULL */
+    const char *netmask;          /* dotted quad, or NULL */
+    const char *addr6;            /* tunnel IPv6 address, or NULL */
+    const char *netmask6;         /* "address/prefixlen", or NULL */
+    const char *dns[3];           /* unused entries are NULL */
+    const char *domain;           /* search domains, space-separated, or NULL */
+    int mtu;
+    /* Routes as "a.b.c.d/255.255.0.0", "a.b.c.d/16" or "x:y::/64". */
+    const char *const *split_includes;
+    int n_split_includes;
+    const char *const *split_excludes;
+    int n_split_excludes;
+    const char *const *split_dns;  /* domains to resolve through the tunnel */
+    int n_split_dns;
+} ocshim_netconfig;
 
 typedef struct {
     /* One line of output (level is PRG_ERR=0, PRG_INFO=1, PRG_DEBUG=2,
      * PRG_TRACE=3). May or may not end in a newline. Human-readable only;
      * nothing needs to parse it — see ocshim_snapshot. */
     void (*log)(void *ctx, int level, const char *msg);
-    /* Tunnel is up (before DTLS/ESP negotiation). Strings valid only for the
-     * duration of the call; any may be NULL. */
-    void (*connected)(void *ctx, const char *addr, const char *netmask,
-                      const char *gateway, int mtu);
+    /* The server has accepted the session and assigned addresses (before
+     * DTLS/ESP negotiation). Required. Apply `cfg` to the system, then return
+     * a datagram fd that carries the tunnel's packets with utun framing:
+     * each datagram is a 4-byte address family in network byte order
+     * (AF_INET / AF_INET6) followed by one IP packet. Return a negative
+     * errno to abort. The fd stays owned by the caller, who closes it after
+     * ocshim_run() returns. May block. */
+    int (*configure)(void *ctx, const ocshim_netconfig *cfg);
     /* The server's certificate failed validation and did not match the pin
      * passed to ocshim_run(); the connection is aborted. `hash` is the
      * "pin-sha256:..." fingerprint to pass back as the pin if the user
@@ -47,7 +75,6 @@ typedef struct {
     uint64_t tx_pkts, tx_bytes, rx_pkts, rx_bytes;   /* cumulative */
     double sampled_at;            /* unix time of the last counter sample */
     /* Set once the tunnel is up; empty before that. */
-    char ifname[32];              /* e.g. "utun6" */
     char address[64];             /* the tunnel's IPv4 address, if it has one */
 } ocshim_snapshot;
 
@@ -60,7 +87,7 @@ ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx);
  * `pinned_cert` (may be NULL) is a "pin-sha256:..." hash; a certificate that
  * fails normal validation is accepted iff it matches. */
 int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
-               const char *vpnc_script, const char *pinned_cert,
+               const char *pinned_cert,
                int reconnect_timeout, int dpd_seconds, int verbose);
 
 void ocshim_cancel(ocshim_t *s);             /* ~ SIGTERM */

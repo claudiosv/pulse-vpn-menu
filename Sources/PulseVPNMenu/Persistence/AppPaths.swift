@@ -10,7 +10,6 @@ enum AppPaths {
     }()
 
     static let connectionsFile = appSupportDir.appendingPathComponent("connections.json")
-    static let runtimeStateFile = appSupportDir.appendingPathComponent("runtime-state.json")
     static let appSettingsFile = appSupportDir.appendingPathComponent("settings.json")
     static let chromeProfileDir = appSupportDir.appendingPathComponent("chrome-profile", isDirectory: true)
 
@@ -25,19 +24,19 @@ enum AppPaths {
     /// Durable, append-only record of everything the app itself has
     /// logged (`LogStore.append`) — registration status, connect
     /// failures, reattach confirmations, route errors, etc. — with a
-    /// timestamp on every line. Unlike `currentLogFile` (openconnect's own
-    /// raw output, truncated at the start of every connection attempt),
+    /// timestamp on every line. Unlike `currentLogFile` (the VPN session's
+    /// output, truncated at the start of every connection attempt),
     /// this file is never cleared, so it survives across connections and
     /// app relaunches as a running diagnostic history.
     static let appLogFile = logsDir.appendingPathComponent("app.log")
 
-    /// Ensures the log file exists (world-writable, since the privileged
-    /// helper's `FileHandle(forWritingAtPath:)` requires it to already
-    /// exist) before a new connection attempt.
+    /// Starts the session log afresh before a new connection attempt. The
+    /// app writes it itself (`SessionLogFile`), from lines collected from
+    /// the packet tunnel provider.
     static func prepareForNewConnection() throws {
         try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
         for file in [currentLogFile] {
-            FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o666])
+            FileManager.default.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o644])
         }
     }
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.application-identifier</key>
+    <string>5HN43G3472.com.claudiosv.pulse-vpn-menu</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>5HN43G3472</string>
+    <!-- Install and update the packet tunnel system extension. -->
+    <key>com.apple.developer.system-extension.install</key>
+    <true/>
+    <!-- Create and control VPN configurations for it. The "-systemextension"
+         value is the one Developer ID distribution uses. -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider-systemextension</string>
+    </array>
+</dict>
+</plist>

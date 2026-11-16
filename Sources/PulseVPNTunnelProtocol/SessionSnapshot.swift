@@ -1,6 +1,6 @@
 import Foundation
 
-/// The helper's view of the running VPN session — the `snapshot` inside a
+/// The provider's view of the running VPN session — the `snapshot` inside a
 /// `SessionStatus`. Mirrors `OpenConnectSnapshot`; the app never links
 /// libopenconnect.
 public struct SessionSnapshot: Codable, Sendable, Equatable {

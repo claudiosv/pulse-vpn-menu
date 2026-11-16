@@ -75,7 +75,7 @@ final class LogStore: ObservableObject {
     private func startTailing() {
         let path = AppPaths.currentLogFile.path
         if !FileManager.default.fileExists(atPath: path) {
-            FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o666])
+            FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o644])
         }
         let fd = open(path, O_EVTONLY)
         guard fd >= 0 else { return }
@@ -102,7 +102,7 @@ final class LogStore: ObservableObject {
     private func readNewData() {
         guard let data = try? Data(contentsOf: AppPaths.currentLogFile) else { return }
         if UInt64(data.count) < readOffset {
-            // The file shrank — the helper caps current.log's size and
+            // The file shrank — `SessionLogFile` caps current.log's size and
             // trims older content once it grows past the limit. Everything
             // now in the file is a suffix of what's already been tailed
             // and displayed, so just resync the offset rather than

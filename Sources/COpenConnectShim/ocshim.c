@@ -189,13 +189,61 @@ ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
     return s;
 }
 
+/* Flattens a libopenconnect route/domain list into `out` (at most `max`). */
+static int flatten(const struct oc_split_include *list, const char **out, int max)
+{
+    int n = 0;
+
+    for (; list && n < max; list = list->next)
+        if (list->route)
+            out[n++] = list->route;
+    return n;
+}
+
+#define OCSHIM_MAX_ROUTES 512
+
+/* Hands the server-assigned configuration to the caller; returns the packet
+ * fd it gives back, or a negative errno. */
+static int run_configure(struct ocshim *s, const struct oc_ip_info *ip)
+{
+    const char **lists;
+    ocshim_netconfig cfg;
+    int ret, i;
+
+    if (!s->cb.configure)
+        return -ENOTSUP;
+    lists = calloc(3 * OCSHIM_MAX_ROUTES, sizeof(*lists));
+    if (!lists)
+        return -ENOMEM;
+
+    memset(&cfg, 0, sizeof(cfg));
+    cfg.gateway_addr = ip->gateway_addr;
+    cfg.addr = ip->addr;
+    cfg.netmask = ip->netmask;
+    cfg.addr6 = ip->addr6;
+    cfg.netmask6 = ip->netmask6;
+    for (i = 0; i < 3; i++)
+        cfg.dns[i] = ip->dns[i];
+    cfg.domain = ip->domain;
+    cfg.mtu = ip->mtu;
+    cfg.split_includes = lists;
+    cfg.n_split_includes = flatten(ip->split_includes, lists, OCSHIM_MAX_ROUTES);
+    cfg.split_excludes = lists + OCSHIM_MAX_ROUTES;
+    cfg.n_split_excludes = flatten(ip->split_excludes, lists + OCSHIM_MAX_ROUTES, OCSHIM_MAX_ROUTES);
+    cfg.split_dns = lists + 2 * OCSHIM_MAX_ROUTES;
+    cfg.n_split_dns = flatten(ip->split_dns, lists + 2 * OCSHIM_MAX_ROUTES, OCSHIM_MAX_ROUTES);
+
+    ret = s->cb.configure(s->ctx, &cfg);
+    free(lists);
+    return ret;
+}
+
 int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
-               const char *vpnc_script, const char *pinned_cert,
+               const char *pinned_cert,
                int reconnect_timeout, int dpd_seconds, int verbose)
 {
-    int ret, fd, have_ip;
-    const struct oc_ip_info *ip;
-    const char *ifname;
+    int ret, fd, tun_fd;
+    const struct oc_ip_info *ip = NULL;
     time_t exp;
 
     s->pinned_cert = pinned_cert;
@@ -239,30 +287,39 @@ int ocshim_run(ocshim_t *s, const char *url, const char *cookie,
         goto out;
     }
 
-    ret = openconnect_setup_tun_device(s->vpninfo, vpnc_script, NULL);
+    if (openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) < 0 || !ip) {
+        emit(s, PRG_ERR, "The server assigned no addresses\n");
+        ret = -EINVAL;
+        goto out;
+    }
+    emitf(s, PRG_INFO, "Server assigned %s%s%s, MTU %d\n",
+          ip->addr ? ip->addr : "",
+          (ip->addr && ip->addr6) ? " + " : "",
+          ip->addr6 ? ip->addr6 : "",
+          ip->mtu);
+
+    /* The caller applies the addresses, routes and DNS and gives us the
+     * packet fd, so libopenconnect never creates a device or runs a script.
+     * With no vpnc-script set it also leaves the fd open when it exits. */
+    tun_fd = run_configure(s, ip);
+    if (tun_fd < 0) {
+        emitf(s, PRG_ERR, "Applying the tunnel network settings failed (%s)\n", strerror(-tun_fd));
+        ret = tun_fd;
+        goto out;
+    }
+    ret = openconnect_setup_tun_fd(s->vpninfo, tun_fd);
     if (ret) {
         emit(s, PRG_ERR, "Setting up the tunnel device failed\n");
         goto out;
     }
 
-    have_ip = openconnect_get_ip_info(s->vpninfo, &ip, NULL, NULL) >= 0;
-    ifname = openconnect_get_ifname(s->vpninfo);
     pthread_mutex_lock(&s->mu);
     s->snap.link_state = OCSHIM_LINK_UP;
-    snprintf(s->snap.ifname, sizeof(s->snap.ifname), "%s", ifname ? ifname : "");
-    snprintf(s->snap.address, sizeof(s->snap.address), "%s", have_ip && ip->addr ? ip->addr : "");
+    snprintf(s->snap.address, sizeof(s->snap.address), "%s", ip->addr ? ip->addr : "");
     pthread_mutex_unlock(&s->mu);
     notify_changed(s);
+    emit(s, PRG_INFO, "Tunnel up\n");
 
-    if (have_ip) {
-        emitf(s, PRG_INFO, "Tunnel up: %s%s%s, MTU %d\n",
-              ip->addr ? ip->addr : "",
-              (ip->addr && ip->addr6) ? " + " : "",
-              ip->addr6 ? ip->addr6 : "",
-              ip->mtu);
-        if (s->cb.connected)
-            s->cb.connected(s->ctx, ip->addr, ip->netmask, ip->gateway_addr, ip->mtu);
-    }
     exp = openconnect_get_auth_expiration(s->vpninfo);
     if (exp != 0) {
         char buf[80];

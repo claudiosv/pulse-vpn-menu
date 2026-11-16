@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.application-identifier</key>
+    <string>5HN43G3472.com.claudiosv.pulse-vpn-menu.tunnel</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>5HN43G3472</string>
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider-systemextension</string>
+    </array>
+    <!-- Network Extension system extensions must be sandboxed. The tunnel
+         only needs the network: it reaches the VPN server over TLS and UDP. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <!-- NEMachServiceName in the extension's Info.plist must start with one
+         of these. -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>5HN43G3472.com.claudiosv.pulse-vpn-menu</string>
+    </array>
+</dict>
+</plist>

@@ -11,15 +11,16 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "PulseVPNHelperProtocol",
-            path: "Sources/PulseVPNHelperProtocol"
+            name: "PulseVPNTunnelProtocol",
+            path: "Sources/PulseVPNTunnelProtocol"
         ),
         .executableTarget(
             name: "PulseVPNMenu",
-            dependencies: ["PulseVPNHelperProtocol"],
+            dependencies: ["PulseVPNTunnelProtocol"],
             path: "Sources/PulseVPNMenu",
             linkerSettings: [
-                .linkedFramework("SystemConfiguration")
+                .linkedFramework("NetworkExtension"),
+                .linkedFramework("SystemExtensions"),
             ]
         ),
         .target(
@@ -43,10 +44,20 @@ let package = Package(
             dependencies: ["OpenConnectKit"],
             path: "Sources/OCShimProbe"
         ),
+        // Everything the packet tunnel provider does, as a library so it
+        // can be tested; PulseVPNTunnel is the system extension's executable.
+        .target(
+            name: "PulseVPNTunnelCore",
+            dependencies: ["PulseVPNTunnelProtocol", "OpenConnectKit"],
+            path: "Sources/PulseVPNTunnelCore",
+            linkerSettings: [
+                .linkedFramework("NetworkExtension")
+            ]
+        ),
         .executableTarget(
-            name: "PulseVPNMenuHelper",
-            dependencies: ["PulseVPNHelperProtocol", "OpenConnectKit"],
-            path: "Sources/PulseVPNMenuHelper"
+            name: "PulseVPNTunnel",
+            dependencies: ["PulseVPNTunnelCore"],
+            path: "Sources/PulseVPNTunnel"
         ),
         .testTarget(
             name: "OpenConnectKitTests",
@@ -54,9 +65,9 @@ let package = Package(
             path: "Tests/OpenConnectKitTests"
         ),
         .testTarget(
-            name: "PulseVPNMenuHelperTests",
-            dependencies: ["PulseVPNMenuHelper", "PulseVPNHelperProtocol"],
-            path: "Tests/PulseVPNMenuHelperTests"
+            name: "PulseVPNTunnelTests",
+            dependencies: ["PulseVPNTunnelCore", "PulseVPNTunnelProtocol", "OpenConnectKit"],
+            path: "Tests/PulseVPNTunnelTests"
         )
     ]
 )

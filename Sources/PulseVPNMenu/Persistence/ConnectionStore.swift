@@ -7,6 +7,11 @@ final class ConnectionStore: ObservableObject {
     @Published private(set) var profiles: [ConnectionProfile] = []
     @Published var defaultConnectionID: UUID?
 
+    /// Called after a connection is added, edited or deleted (not for the
+    /// cached cookie or pin), so the VPN configurations in System Settings
+    /// can follow.
+    var onProfilesEdited: (() -> Void)?
+
     private struct Document: Codable {
         var profiles: [ConnectionProfile]
         var defaultConnectionID: UUID?
@@ -33,12 +38,14 @@ final class ConnectionStore: ObservableObject {
             defaultConnectionID = profile.id
         }
         save()
+        onProfilesEdited?()
     }
 
     func update(_ profile: ConnectionProfile) {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
         profiles[index] = profile
         save()
+        onProfilesEdited?()
     }
 
     func delete(id: UUID) {
@@ -47,6 +54,7 @@ final class ConnectionStore: ObservableObject {
             defaultConnectionID = profiles.first?.id
         }
         save()
+        onProfilesEdited?()
     }
 
     func setDefault(id: UUID) {

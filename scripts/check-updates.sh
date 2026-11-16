@@ -11,7 +11,6 @@
 #                  is listed for information only (3.5 is long-term support)
 #   openconnect    if the pin is exactly a release: a newer release;
 #                  if the pin is a snapshot past a release: upstream HEAD ahead
-#   vpnc-scripts   upstream HEAD ahead (it has no releases)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -103,25 +102,7 @@ check_openconnect() {
     fi
 }
 
-# ---------------------------------------------------------- vpnc-scripts --
-check_vpnc_scripts() {
-    local dir=vpnc-scripts pin head behind
-    pin="$(pin_of $dir)"
-    git -C third_party/$dir fetch -q origin HEAD \
-        || { echo "vpnc-scripts: couldn't reach upstream" >&2; return 2; }
-    head="$(git -C third_party/$dir rev-parse FETCH_HEAD)"
-    behind="$(git -C third_party/$dir rev-list --count "$pin..$head")"
-    echo "vpnc-scripts   pinned $(git -C third_party/$dir log -1 --format='%h (%cs)' "$pin")"
-    if [[ "$behind" == 0 ]]; then
-        echo "      upstream HEAD: same commit   up to date"
-    else
-        echo "      upstream HEAD: $(git -C third_party/$dir log -1 --format='%h (%cs)' "$head"), $behind commits ahead   UPDATE AVAILABLE"
-        bump_hint $dir "${head:0:10}"
-        updates=$((updates + 1))
-    fi
-}
-
-for dep in openssl openconnect vpnc-scripts; do
+for dep in openssl openconnect; do
     [[ -e third_party/$dep/.git ]] && continue
     depth=""; [[ $dep == openssl ]] && depth="--depth 1"   # shallow: full history is ~400 MB
     git submodule update --init $depth third_party/$dep >/dev/null 2>&1 \
@@ -132,7 +113,6 @@ done
 # look like "up to date" or "update available".
 check_openssl || exit 2
 check_openconnect || exit 2
-check_vpnc_scripts || exit 2
 
 echo
 if [[ $updates -eq 0 ]]; then

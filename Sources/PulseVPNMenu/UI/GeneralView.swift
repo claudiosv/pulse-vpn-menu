@@ -47,7 +47,7 @@ struct GeneralView: View {
                                 .font(.system(size: 13.5))
                         }
                         .toggleStyle(.switch)
-                        Text("Posts a notification when the VPN session ends without you clicking Disconnect — it expired, it gave up reconnecting, or the helper crashed.")
+                        Text("Posts a notification when the VPN session ends without you clicking Disconnect — it expired, it gave up reconnecting, or the VPN extension crashed.")
                             .cardFootnote()
                     }
                 }
