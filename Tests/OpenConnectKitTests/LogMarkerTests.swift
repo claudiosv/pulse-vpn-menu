@@ -20,6 +20,26 @@ import Testing
         return found
     }
 
+    /// The shim compares `openconnect_get_dtls_state()` with a copy of
+    /// libopenconnect's internal `DTLS_CONNECTED` value.
+    @Test func dtlsConnectedValueMatchesTheVendoredSource() throws {
+        let header = Self.root.appendingPathComponent("third_party/openconnect/openconnect-internal.h")
+        guard let internalHeader = try? String(contentsOf: header, encoding: .utf8) else { return }   // no submodule
+        let shim = try String(
+            contentsOf: Self.root.appendingPathComponent("Sources/COpenConnectShim/ocshim.c"), encoding: .utf8)
+
+        func value(of name: String, in text: String) -> Int? {
+            for line in text.split(separator: "\n") {
+                let words = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+                if words.count >= 3, words[0] == "#define", words[1] == name { return Int(words[2]) }
+            }
+            return nil
+        }
+        let upstream = try #require(value(of: "DTLS_CONNECTED", in: internalHeader))
+        let ours = try #require(value(of: "OCSHIM_DTLS_CONNECTED", in: shim))
+        #expect(upstream == ours, "DTLS_CONNECTED changed to \(upstream); update OCSHIM_DTLS_CONNECTED")
+    }
+
     @Test func markersAreStillInTheVendoredSource() throws {
         let source = Self.root.appendingPathComponent("third_party/openconnect")
         guard let files = FileManager.default.enumerator(at: source, includingPropertiesForKeys: nil) else {

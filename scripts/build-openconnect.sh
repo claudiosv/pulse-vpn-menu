@@ -74,7 +74,12 @@ OPENSSL_OPTS=(no-shared no-tests no-apps no-docs no-module no-legacy no-engine n
               --openssldir=/etc/ssl --libdir=lib -mmacosx-version-min=27.0)
 OC_CFLAGS="-O3 -mmacosx-version-min=27.0"
 
-STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12}+${OPENSSL_OPTS[*]// /,}+$OC_CFLAGS$dirty $ARCHS"
+# Local patches to libopenconnect (scripts/patches/*.patch), applied to the
+# generated tree below; part of every cache key so a changed patch rebuilds.
+PATCHES=(scripts/patches/*.patch)
+PATCH_HASH="$(cat "${PATCHES[@]}" | shasum | cut -c1-8)"
+
+STAMP="openssl@${OPENSSL_SHA:0:12} openconnect@${OC_SHA:0:12}+patches@${PATCH_HASH}+${OPENSSL_OPTS[*]// /,}+$OC_CFLAGS$dirty $ARCHS"
 
 if [[ -f "$OUT/lib/libopenconnect.a" && "$(cat "$OUT/.version" 2>/dev/null)" == "$STAMP" ]]; then
     echo "==> libopenconnect ($(git -C "$OC_SRC" describe --tags)) already built"
@@ -94,7 +99,7 @@ mkdir -p "$OUT/lib" "$OUT/include" "$CACHE"
 # autogen'd openconnect tree for this pin, shared by every arch and reused
 # until the pin changes. A clone (not a copy of the submodule's files) so
 # version.sh can report the real `git describe` version.
-GEN="$CACHE/oc-$OC_SHA"
+GEN="$CACHE/oc-$OC_SHA-$PATCH_HASH"
 for old in "$CACHE"/oc-*; do [[ $old == "$GEN" ]] || rm -rf "$old"; done
 # A tree generated before this used --copy symlinks its auxiliary files
 # (compile, install-sh, config.guess, ...) into the versioned Homebrew
@@ -105,6 +110,12 @@ if [[ ! -x "$GEN/configure" || -n "$(find -L "$GEN" -maxdepth 1 -type l 2>/dev/n
     rm -rf "$GEN"
     git clone -q "$OC_SRC" "$GEN"
     git -C "$GEN" checkout -q --detach "$OC_SHA"
+    # A patch that no longer applies after a submodule bump must stop the
+    # build here, not leave a half-patched library.
+    for patch in "${PATCHES[@]}"; do
+        patch -p1 -d "$GEN" < "$patch" >"$GEN/patch.log" 2>&1 \
+            || { echo "error: $patch does not apply to openconnect $OC_SHA" >&2; cat "$GEN/patch.log" >&2; rm -rf "$GEN"; exit 1; }
+    done
     # openconnect's autogen.sh, but with --copy so the auxiliary files are
     # real copies rather than symlinks into the automake install.
     (

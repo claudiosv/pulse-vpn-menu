@@ -1,0 +1,28 @@
+--- a/library.c
++++ b/library.c
+@@ -1623,6 +1623,14 @@
+ 		return NULL;
+ 
+ 	return compr_name_map[vpninfo->dtls_compr];
++}
++
++/* Added by OpenConnect Menu (scripts/patches/oc-dtls-state.patch): the
++ * DTLS_* state of the UDP data channel (DTLS or ESP), so callers need not
++ * match log text to learn that ESP came up. */
++int openconnect_get_dtls_state(struct openconnect_info *vpninfo)
++{
++	return vpninfo->dtls_state;
+ }
+ 
+ const char *openconnect_get_dtls_cipher(struct openconnect_info *vpninfo)
+--- a/openconnect.h
++++ b/openconnect.h
+@@ -484,6 +484,8 @@
+  * ask for an API that *does* offer you what you need. */
+ const char *openconnect_get_cstp_cipher(struct openconnect_info *);
+ const char *openconnect_get_dtls_cipher(struct openconnect_info *);
++/* Added by OpenConnect Menu: the internal DTLS_* state (5 = connected). */
++int openconnect_get_dtls_state(struct openconnect_info *);
+ 
+ /* These return a descriptive string of the compression algorithm
+  * in use (LZS, LZ4, ...). If no compression then NULL is returned. */

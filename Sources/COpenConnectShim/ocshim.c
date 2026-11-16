@@ -52,6 +52,11 @@ static void emitf(struct ocshim *s, int level, const char *fmt, ...)
     emit(s, level, buf);
 }
 
+/* DTLS_CONNECTED in openconnect-internal.h: the UDP data channel (DTLS or
+ * ESP) is up. The value is internal to libopenconnect; DtlsStateTests checks
+ * it against the vendored source. */
+#define OCSHIM_DTLS_CONNECTED 5
+
 /* libopenconnect doesn't expose DTLS/ESP state or "a reconnect has begun" as
  * callbacks, so the two transitions it only reports in text are recognised
  * here, once, and turned into typed state. (The TCP-reconnected callback
@@ -198,8 +203,20 @@ static void stats_handler(void *priv, const struct oc_stats *st)
 {
     struct ocshim *s = priv;
     struct timespec now;
+    int changed = 0;
+    /* The UDP data channel's own state, read straight from libopenconnect
+     * (through the patch in scripts/patches), so ESP is noticed even if the
+     * log line note_progress() watches for is ever reworded. This runs on
+     * the mainloop thread, the one that changes the state. */
+    int esp_up = openconnect_get_dtls_state(s->vpninfo) >= OCSHIM_DTLS_CONNECTED;
 
     pthread_mutex_lock(&s->mu);
+    if (esp_up && !s->snap.esp_established) {
+        s->snap.esp_established = 1;
+        if (s->snap.link_state == OCSHIM_LINK_RECONNECTING)
+            s->snap.link_state = OCSHIM_LINK_UP;
+        changed = 1;
+    }
     s->snap.tx_pkts = st->tx_pkts;
     s->snap.tx_bytes = st->tx_bytes;
     s->snap.rx_pkts = st->rx_pkts;
@@ -208,6 +225,8 @@ static void stats_handler(void *priv, const struct oc_stats *st)
     clock_gettime(CLOCK_REALTIME, &now);
     s->snap.sampled_at = (double)now.tv_sec + now.tv_nsec / 1e9;
     pthread_mutex_unlock(&s->mu);
+    if (changed)
+        notify_changed(s);
 }
 
 ocshim_t *ocshim_new(const ocshim_callbacks *cb, void *ctx)
