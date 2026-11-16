@@ -84,7 +84,7 @@ tunnel by the system, so a full tunnel doesn't loop.
 
 Decided in `TunnelPlan.make`, per connection:
 
-- **Only route** (`splitRoutes`) set: exactly those destinations go through
+- **Routes** (`splitRoutes`) set: exactly those destinations go through
   the tunnel. This replaces `vpn-slice` scripts; a saved
   `vpn-slice 169.237.0.0/16 …` script is migrated to its address arguments
   (host-name arguments and any other script are dropped — review the field).

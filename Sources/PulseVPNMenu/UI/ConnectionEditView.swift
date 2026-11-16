@@ -6,7 +6,7 @@ struct ConnectionEditView: View {
 
     @State private var name: String
     @State private var vpnURL: String
-    /// The "Only route" list: one address or CIDR range per entry.
+    /// The "Routes" list: one address or CIDR range per entry.
     @State private var routes: [String]
     /// What is typed in the list's add field, not yet added.
     @State private var newRoute = ""
@@ -96,7 +96,7 @@ struct ConnectionEditView: View {
                             .foregroundStyle(.red)
                     }
                 } header: {
-                    Text("Only Route")
+                    Text("Routes")
                 } footer: {
                     Text(routes.isEmpty
                         ? "No routes: all traffic goes through the VPN (or the server's routes, if chosen below)."
