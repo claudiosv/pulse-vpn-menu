@@ -198,6 +198,16 @@ Every packet crosses a socket pair between `packetFlow` and libopenconnect
 hand libopenconnect the system's utun file descriptor directly, as WireGuard
 does. That relies on finding the descriptor by scanning, not on public API.
 
+Measured (Apple M4 Pro, 1400-byte packets, `PacketBridgeBenchmark`, run with
+`BRIDGE_BENCH=1 swift test --filter PacketBridgeBenchmark`): the bridge moves
+about 12 Gbit/s from the system to libopenconnect and 14 Gbit/s the other
+way, against 18 Gbit/s for a bare socket pair with no bridge. That is far
+above what the ESP/TLS transport can encrypt, so the bridge is not the limit
+and this item is not worth doing. The benchmark leaves out
+`NEPacketTunnelFlow` and the VPN transport; an end-to-end `iperf3` run
+through a real tunnel would be the next measurement if a speed problem shows
+up.
+
 ### 14. Route by hostname
 
 `vpn-slice host.example.edu` resolved a name over the VPN, routed its address
