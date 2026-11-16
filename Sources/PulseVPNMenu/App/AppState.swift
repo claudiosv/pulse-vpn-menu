@@ -50,6 +50,9 @@ final class AppState: ObservableObject {
         controller.profileName = { [weak connectionStore] id in
             connectionStore?.profile(id: id)?.name
         }
+        controller.clearSavedLogin = { [weak connectionStore] id in
+            connectionStore?.updateDSID(profileID: id, dsid: nil)
+        }
         // Switched on in System Settings > VPN: sign in and connect here.
         controller.externalConnectRequested = { [weak self] id in
             guard let self, let profile = self.connectionStore.profile(id: id) else { return }

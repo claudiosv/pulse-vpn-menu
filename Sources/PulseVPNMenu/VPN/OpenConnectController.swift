@@ -95,6 +95,11 @@ final class OpenConnectController: ObservableObject {
     /// `AppState` answers by connecting that profile the normal way.
     var externalConnectRequested: ((UUID) -> Void)?
 
+    /// Forgets a profile's cached login cookie. Stopping the tunnel logs the
+    /// session off on the server, which kills the cookie, so the next
+    /// connect should go straight to the browser login.
+    var clearSavedLogin: ((UUID) -> Void)?
+
     static let tunnelTimeout: TimeInterval = 30
 
     /// Demo mode's stand-in for `runtimeState`: when the simulated session
@@ -371,6 +376,7 @@ final class OpenConnectController: ObservableObject {
         defer { isBusy = false }
 
         stopStatsTimer()
+        let profileID = runtimeState?.profileID
 
         TunnelClient.shared.stop()
         logStore.append("Asked the VPN session to stop.\n")
@@ -382,6 +388,7 @@ final class OpenConnectController: ObservableObject {
         connectedProfileID = nil
         tunnel = nil
         tunnelDNS = nil
+        if let profileID { clearSavedLogin?(profileID) }
     }
 
     func reconnect() async throws {
@@ -442,6 +449,7 @@ final class OpenConnectController: ObservableObject {
         case (.exited, -EINTR):
             // Stopped on request, just not ours: System Settings > VPN.
             logStore.append("The VPN was disconnected outside the app.\n")
+            clearSavedLogin?(state.profileID)
             await tearDownAfterExit(state: state)
             return
         case (.exited, -EPERM):

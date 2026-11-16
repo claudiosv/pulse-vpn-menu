@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import NetworkExtension
 import OpenConnectKit
 import PulseVPNTunnelProtocol
@@ -29,6 +30,13 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     /// status and log before the provider goes away (after which nothing can
     /// be asked of it). Costs nothing when the app polls promptly.
     private static let finalStatusGrace: TimeInterval = 1.5
+
+    private var pathMonitor: NWPathMonitor?
+    private var lastPathSignature: String?
+    private var pendingReconnect: DispatchWorkItem?
+
+    /// Network changes tend to arrive in bursts; reconnect once things settle.
+    private static let reconnectDelay: TimeInterval = 2
 
     // MARK: - Start
 
@@ -71,6 +79,65 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
             },
             onExit: { [self] rc in sessionEnded(rc) }
         )
+        startPathMonitor()
+    }
+
+    // MARK: - Reconnect on wake and network change
+
+    public override func wake() {
+        scheduleReconnect(because: "the Mac woke from sleep")
+    }
+
+    /// Watches the physical network (not the tunnel's own interface) and asks
+    /// for a reconnect when the usable path changes, e.g. a Wi-Fi switch.
+    private func startPathMonitor() {
+        let monitor = NWPathMonitor(prohibitedInterfaceTypes: [.other])
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let signature = Self.signature(of: path)
+            let previous = lock.withLock { () -> String? in
+                defer { lastPathSignature = signature }
+                return lastPathSignature
+            }
+            // The first update is the baseline; coming back from "no network"
+            // or moving to another interface or gateway is a change.
+            guard let previous, previous != signature, path.status == .satisfied else { return }
+            scheduleReconnect(because: "the network changed")
+        }
+        monitor.start(queue: .global(qos: .utility))
+        lock.withLock {
+            pathMonitor?.cancel()
+            pathMonitor = monitor
+            lastPathSignature = nil
+        }
+    }
+
+    private func stopPathMonitor() {
+        lock.withLock {
+            pathMonitor?.cancel()
+            pathMonitor = nil
+            pendingReconnect?.cancel()
+            pendingReconnect = nil
+        }
+    }
+
+    private static func signature(of path: NWPath) -> String {
+        let interfaces = path.availableInterfaces.map(\.name).joined(separator: ",")
+        let gateways = path.gateways.map { "\($0)" }.joined(separator: ",")
+        return "\(path.status)|\(interfaces)|\(gateways)"
+    }
+
+    private func scheduleReconnect(because reason: String) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, session.isRunning else { return }
+            session.log.append("Reconnecting: \(reason)\n")
+            session.requestReconnect()
+        }
+        lock.withLock {
+            pendingReconnect?.cancel()
+            pendingReconnect = work
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + Self.reconnectDelay, execute: work)
     }
 
     /// On the session thread, once the server has assigned addresses: applies
@@ -132,6 +199,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     /// After the session has ended for any reason, on the thread it ended on.
     private func sessionEnded(_ rc: Int32) {
         logger.notice("Session ended with \(rc)")
+        stopPathMonitor()
         lock.withLock { take(&bridge) }?.stop()
         Self.postStatusChanged()
 
