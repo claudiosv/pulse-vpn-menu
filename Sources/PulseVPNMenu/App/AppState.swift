@@ -24,6 +24,8 @@ final class AppState: ObservableObject {
     /// The tunnel's DNS servers and what they answer for; snapshotted with
     /// the line above.
     @Published private(set) var connectedDNSDescription: String?
+    /// "ESP (UDP)" or "TLS (TCP)"; snapshotted with the lines above.
+    @Published private(set) var connectedTransport: String?
 
     /// Which section the main window shows. Lives here rather than in
     /// `MainWindowView`'s `@State` so the menu bar can open the window
@@ -84,6 +86,7 @@ final class AppState: ObservableObject {
         isConnected = connected
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil
         connectedDNSDescription = connected ? controller.connectedDNSDescription : nil
+        connectedTransport = connected ? controller.connectedTransport : nil
         if controller.isBusy {
             statusText = "VPN: working…"
         } else if connected {

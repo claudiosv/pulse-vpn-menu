@@ -194,6 +194,18 @@ struct StatusView: View {
             StatsGraphView(stats: controller.stats, style: .card)
                 .frame(height: 84)
 
+            if let transport = appState.connectedTransport {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("VIA")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Text(transport)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            }
+
             if let dns = appState.connectedDNSDescription {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("DNS")

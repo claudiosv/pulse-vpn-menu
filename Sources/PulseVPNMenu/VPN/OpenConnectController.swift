@@ -101,6 +101,13 @@ final class OpenConnectController: ObservableObject {
     var clearSavedLogin: ((UUID) -> Void)?
 
     static let tunnelTimeout: TimeInterval = 30
+    /// How long connect waits for ESP before settling for the TLS fallback
+    /// (UDP 4500 blocked, say). Normally ESP is up within a second or two.
+    static let espGrace: TimeInterval = 12
+
+    /// Whether the last snapshot had ESP established; false means traffic
+    /// runs over the TLS connection.
+    private var tunnelUsesESP = false
 
     /// Demo mode's stand-in for `runtimeState`: when the simulated session
     /// started, plus the counter generator feeding `stats`. Nil whenever
@@ -223,6 +230,13 @@ final class OpenConnectController: ObservableObject {
         return "\(tunnelDNS.servers.joined(separator: ", ")) · \(scope)"
     }
 
+    /// "ESP (UDP)" or "TLS (TCP)": what the tunnel's traffic runs over. Nil
+    /// when not connected.
+    var connectedTransport: String? {
+        guard isConnected() else { return nil }
+        return tunnelUsesESP ? "ESP (UDP)" : "TLS (TCP)"
+    }
+
     /// Just the tunnel's address, e.g. "172.25.228.228", for the menu
     /// header, which has no room for the interface name. A plain property
     /// read, so (like `connectedSince`) it's safe from a view body.
@@ -336,7 +350,7 @@ final class OpenConnectController: ObservableObject {
 
         // Up means the session reached ESP *and* the tunnel has an address;
         // the interface alone isn't enough. Ending first means failure.
-        guard let status = await waitForStatus(timeout: Self.tunnelTimeout, until: Self.isTunnelUp) else {
+        guard let status = await waitForTunnelUp() else {
             throw ConnectError.tunnelTimeout
         }
         if !status.isRunning {
@@ -414,7 +428,7 @@ final class OpenConnectController: ObservableObject {
         try await TunnelClient.shared.requestReconnect()
         logStore.append("Asked the VPN session to reconnect.\n")
 
-        guard let status = await waitForStatus(timeout: Self.tunnelTimeout, until: Self.isTunnelUp) else {
+        guard let status = await waitForTunnelUp() else {
             logStore.append("Reconnect timed out waiting for the tunnel to come back up.\n")
             return
         }
@@ -535,6 +549,20 @@ final class OpenConnectController: ObservableObject {
         waiters.removeValue(forKey: id)?.continuation.resume(returning: status)
     }
 
+    /// Waits for the tunnel to be usable: ESP established, or after
+    /// `espGrace` the link up over TLS alone. Nil on timeout.
+    private func waitForTunnelUp() async -> SessionStatus? {
+        if let status = await waitForStatus(timeout: Self.espGrace, until: Self.isTunnelUp) {
+            return status
+        }
+        if let status = latestStatus, status.isRunning,
+           status.snapshot?.address != nil, status.snapshot?.linkState == .up {
+            logStore.append("ESP did not come up; using the TLS connection instead.\n")
+            return status
+        }
+        return await waitForStatus(timeout: Self.tunnelTimeout - Self.espGrace, until: Self.isTunnelUp)
+    }
+
     /// "Up" for connect/reconnect: the session ended (nothing more to wait
     /// for), or ESP is established and the tunnel has an address.
     private static func isTunnelUp(_ status: SessionStatus) -> Bool {
@@ -548,6 +576,7 @@ final class OpenConnectController: ObservableObject {
         if let address = snapshot.address {
             tunnel = (snapshot.interfaceName, address)
         }
+        tunnelUsesESP = snapshot.espEstablished
         if let servers = snapshot.dnsServers, !servers.isEmpty {
             tunnelDNS = (servers, snapshot.dnsDomains)
         } else {
