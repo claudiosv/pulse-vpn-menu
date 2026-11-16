@@ -15,11 +15,13 @@ enum LegacyHelperCleanup {
     static func runOnce(log: (String) -> Void) async {
         guard !UserDefaults.standard.bool(forKey: doneKey) else { return }
         let service = SMAppService.daemon(plistName: plistName)
-        switch service.status {
-        case .notRegistered, .notFound:
+        let status = service.status
+        switch status {
+        case .notRegistered:
             // Nothing registered (a fresh install, or already removed).
             UserDefaults.standard.set(true, forKey: doneKey)
         default:
+            log("Retired helper daemon status: \(status) (\(status.rawValue)); unregistering.\n")
             do {
                 try await service.unregister()
                 log("Removed the retired helper daemon from Login Items.\n")
