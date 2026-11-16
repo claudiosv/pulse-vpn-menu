@@ -21,6 +21,9 @@ final class AppState: ObservableObject {
     /// doing that synchronously from inside a SwiftUI view body crashes
     /// AttributeGraph (see `OpenConnectController.connectedSince`).
     @Published private(set) var connectedInterfaceDescription: String?
+    /// The tunnel's DNS servers and what they answer for; snapshotted with
+    /// the line above.
+    @Published private(set) var connectedDNSDescription: String?
 
     /// Which section the main window shows. Lives here rather than in
     /// `MainWindowView`'s `@State` so the menu bar can open the window
@@ -77,6 +80,7 @@ final class AppState: ObservableObject {
         let connected = controller.isConnected()
         isConnected = connected
         connectedInterfaceDescription = connected ? controller.connectedInterfaceDescription : nil
+        connectedDNSDescription = connected ? controller.connectedDNSDescription : nil
         if controller.isBusy {
             statusText = "VPN: working…"
         } else if connected {

@@ -95,6 +95,10 @@ Decided in `TunnelPlan.make`, per connection:
   tunnel: they answer only for the server's split-DNS domains (or its search
   domains) and are routed through the tunnel; with no domains they are unused.
 
+A connection can override both: **DNS Servers** replaces the server's
+resolvers, and **DNS Domains** sets exactly which domains they answer for
+(in a full tunnel too). The Status tab shows the servers in use.
+
 The system removes all of it when the tunnel ends — there is no cleanup code.
 
 ### App ↔ extension

@@ -14,6 +14,12 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     /// commas or spaces, e.g. "169.237.0.0/16, 10.1.2.3". Empty means the
     /// routes are decided by `noDefaultRoute` and the server.
     var splitRoutes: String?
+    /// DNS servers to use instead of the ones the VPN server provides, in
+    /// the same list format. Empty means the server's.
+    var dnsServers: String?
+    /// The only domains to look up through the VPN's DNS, in the same list
+    /// format. Empty leaves that to the routes and the server.
+    var dnsDomains: String?
     /// Command to run once the tunnel is up.
     var post: String?
     /// Don't force everything through the tunnel: use the server's own
@@ -34,6 +40,8 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         name: String,
         vpnURL: String,
         splitRoutes: String? = nil,
+        dnsServers: String? = nil,
+        dnsDomains: String? = nil,
         post: String? = nil,
         noDefaultRoute: Bool = false,
         debug: Bool = false,
@@ -44,6 +52,8 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         self.name = name
         self.vpnURL = vpnURL
         self.splitRoutes = splitRoutes
+        self.dnsServers = dnsServers
+        self.dnsDomains = dnsDomains
         self.post = post
         self.noDefaultRoute = noDefaultRoute
         self.debug = debug
@@ -52,10 +62,34 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     }
 
     /// `splitRoutes` as separate entries.
-    var splitRouteList: [String] {
-        (splitRoutes ?? "")
+    var splitRouteList: [String] { Self.entries(splitRoutes) }
+    var dnsServerList: [String] { Self.entries(dnsServers) }
+    var dnsDomainList: [String] { Self.entries(dnsDomains) }
+
+    /// A stored list (entries separated by commas or whitespace) taken apart.
+    private static func entries(_ list: String?) -> [String] {
+        (list ?? "")
             .split(whereSeparator: { $0 == "," || $0 == " " || $0 == "\n" || $0 == "\t" })
             .map(String.init)
+    }
+
+    /// An IPv4 or IPv6 address.
+    static func isValidAddress(_ text: String) -> Bool {
+        var v4 = in_addr(), v6 = in6_addr()
+        return inet_pton(AF_INET, text, &v4) == 1 || inet_pton(AF_INET6, text, &v6) == 1
+    }
+
+    /// A DNS domain name: dot-separated labels of letters, digits and
+    /// hyphens, at least two of them, not an IP address.
+    static func isValidDomain(_ text: String) -> Bool {
+        guard text.count <= 253, !isValidAddress(text) else { return false }
+        let labels = text.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2 else { return false }
+        return labels.allSatisfy { label in
+            (1...63).contains(label.count)
+                && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+                && label.first != "-" && label.last != "-"
+        }
     }
 
     /// Whether `text` can be a split route: an IPv4 or IPv6 address,
@@ -84,7 +118,8 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
             vpnURL: vpnURL,
             pinnedCertHash: pinnedCertHash,
             verbose: debug,
-            routing: RoutingOptions(splitRoutes: splitRouteList, forceDefaultRoute: !noDefaultRoute)
+            routing: RoutingOptions(splitRoutes: splitRouteList, forceDefaultRoute: !noDefaultRoute),
+            dns: DNSOptions(servers: dnsServerList, domains: dnsDomainList)
         )
     }
 
@@ -101,6 +136,8 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         id = try values.decode(UUID.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
         vpnURL = try values.decode(String.self, forKey: .vpnURL)
+        dnsServers = try values.decodeIfPresent(String.self, forKey: .dnsServers)
+        dnsDomains = try values.decodeIfPresent(String.self, forKey: .dnsDomains)
         post = try values.decodeIfPresent(String.self, forKey: .post)
         noDefaultRoute = try values.decodeIfPresent(Bool.self, forKey: .noDefaultRoute) ?? false
         debug = try values.decodeIfPresent(Bool.self, forKey: .debug) ?? false

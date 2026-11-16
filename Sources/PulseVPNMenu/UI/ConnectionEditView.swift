@@ -1,15 +1,104 @@
 import SwiftUI
 
+/// A list of short text entries being edited in the form (routes, DNS
+/// servers, DNS domains): the entries, what is typed in its add field, and
+/// the rule an entry has to pass.
+private struct EditableList {
+    var items: [String]
+    /// What is typed in the add field, not yet added.
+    var draft = ""
+    let isValid: (String) -> Bool
+    let invalidMessage: String
+
+    private var trimmedDraft: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Why the typed entry can't be added, or nil if it can (or the field
+    /// is empty).
+    var problem: String? {
+        let entry = trimmedDraft
+        if entry.isEmpty { return nil }
+        if !isValid(entry) { return invalidMessage }
+        if items.contains(entry) { return "That is already in the list." }
+        return nil
+    }
+
+    var canAdd: Bool { !trimmedDraft.isEmpty && problem == nil }
+
+    mutating func add() {
+        guard canAdd else { return }
+        items.append(trimmedDraft)
+        draft = ""
+    }
+
+    /// The list as saved. A valid entry still sitting in the add field
+    /// counts, so clicking Save without clicking Add first doesn't lose it.
+    var saved: String? {
+        let all = canAdd ? items + [trimmedDraft] : items
+        return all.isEmpty ? nil : all.joined(separator: ", ")
+    }
+}
+
+/// One form section editing an `EditableList`: a row per entry with a
+/// remove button, then an add field.
+private struct ListSection: View {
+    let title: String
+    let prompt: String
+    let footer: String
+    @Binding var list: EditableList
+
+    var body: some View {
+        Section {
+            ForEach(list.items, id: \.self) { item in
+                HStack {
+                    Text(item)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button {
+                        list.items.removeAll { $0 == item }
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove \(item)")
+                    .accessibilityLabel("Remove \(item)")
+                }
+            }
+            HStack {
+                TextField("Add to \(title)", text: $list.draft, prompt: Text(prompt))
+                    .labelsHidden()
+                    .font(.system(.body, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .onSubmit { list.add() }
+                Button("Add") { list.add() }
+                    .disabled(!list.canAdd)
+            }
+            if let problem = list.problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text(title)
+        } footer: {
+            Text(footer)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 /// Add/edit form for a single `ConnectionProfile`.
 struct ConnectionEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String
     @State private var vpnURL: String
-    /// The "Routes" list: one address or CIDR range per entry.
-    @State private var routes: [String]
-    /// What is typed in the list's add field, not yet added.
-    @State private var newRoute = ""
+    @State private var routes: EditableList
+    @State private var dnsServers: EditableList
+    @State private var dnsDomains: EditableList
     @State private var post: String
     @State private var noDefaultRoute: Bool
     @State private var debug: Bool
@@ -35,7 +124,18 @@ struct ConnectionEditView: View {
         self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
         self._vpnURL = State(initialValue: profile.vpnURL)
-        self._routes = State(initialValue: profile.splitRouteList)
+        self._routes = State(initialValue: EditableList(
+            items: profile.splitRouteList,
+            isValid: ConnectionProfile.isValidRoute,
+            invalidMessage: "Enter an IP address or a CIDR range, e.g. 169.237.0.0/16 or 10.1.2.3."))
+        self._dnsServers = State(initialValue: EditableList(
+            items: profile.dnsServerList,
+            isValid: ConnectionProfile.isValidAddress,
+            invalidMessage: "Enter the IP address of a DNS server, e.g. 169.237.250.250."))
+        self._dnsDomains = State(initialValue: EditableList(
+            items: profile.dnsDomainList,
+            isValid: ConnectionProfile.isValidDomain,
+            invalidMessage: "Enter a domain name, e.g. example.edu."))
         self._post = State(initialValue: profile.post ?? "")
         self._noDefaultRoute = State(initialValue: profile.noDefaultRoute)
         self._debug = State(initialValue: profile.debug)
@@ -63,46 +163,30 @@ struct ConnectionEditView: View {
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                 }
-                Section {
-                    ForEach(routes, id: \.self) { route in
-                        HStack {
-                            Text(route)
-                                .font(.system(.body, design: .monospaced))
-                                .textSelection(.enabled)
-                            Spacer()
-                            Button {
-                                routes.removeAll { $0 == route }
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red)
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Remove \(route)")
-                            .accessibilityLabel("Remove \(route)")
-                        }
-                    }
-                    HStack {
-                        TextField("Add route", text: $newRoute, prompt: Text("169.237.0.0/16 or 10.1.2.3"))
-                            .labelsHidden()
-                            .font(.system(.body, design: .monospaced))
-                            .autocorrectionDisabled()
-                            .onSubmit(addRoute)
-                        Button("Add", action: addRoute)
-                            .disabled(!canAddRoute)
-                    }
-                    if let problem = newRouteProblem {
-                        Text(problem)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                } header: {
-                    Text("Routes")
-                } footer: {
-                    Text(routes.isEmpty
+                ListSection(
+                    title: "Routes",
+                    prompt: "169.237.0.0/16 or 10.1.2.3",
+                    footer: routes.items.isEmpty
                         ? "No routes: all traffic goes through the VPN (or the server's routes, if chosen below)."
-                        : "Only these destinations go through the VPN.")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                        : "Only these destinations go through the VPN.",
+                    list: $routes
+                )
+                ListSection(
+                    title: "DNS Servers",
+                    prompt: "169.237.250.250",
+                    footer: dnsServers.items.isEmpty
+                        ? "No servers: the VPN server's own DNS servers are used."
+                        : "Used instead of the DNS servers the VPN server provides.",
+                    list: $dnsServers
+                )
+                ListSection(
+                    title: "DNS Domains",
+                    prompt: "example.edu",
+                    footer: dnsDomains.items.isEmpty
+                        ? "No domains: the VPN's DNS answers everything when all traffic goes through it, otherwise only the domains the server names."
+                        : "Only names in these domains are looked up through the VPN's DNS.",
+                    list: $dnsDomains
+                )
                 Section("Advanced") {
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Use the server's routes instead of sending all traffic", isOn: $noDefaultRoute)
@@ -135,7 +219,9 @@ struct ConnectionEditView: View {
                             id: profileID,
                             name: name.isEmpty ? "Untitled" : name,
                             vpnURL: vpnURL,
-                            splitRoutes: savedRoutes.isEmpty ? nil : savedRoutes.joined(separator: ", "),
+                            splitRoutes: routes.saved,
+                            dnsServers: dnsServers.saved,
+                            dnsDomains: dnsDomains.saved,
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,
@@ -147,46 +233,17 @@ struct ConnectionEditView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || vpnURL.isEmpty || newRouteProblem != nil)
+                .disabled(name.isEmpty || vpnURL.isEmpty || hasInvalidEntry)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 520, height: 640)
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Routes
-
-    private var trimmedNewRoute: String {
-        newRoute.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Why the typed route can't be added, or nil if it can (or the field
-    /// is empty).
-    private var newRouteProblem: String? {
-        let route = trimmedNewRoute
-        if route.isEmpty { return nil }
-        if !ConnectionProfile.isValidRoute(route) {
-            return "Enter an IP address or a CIDR range, e.g. 169.237.0.0/16 or 10.1.2.3."
-        }
-        if routes.contains(route) { return "That route is already in the list." }
-        return nil
-    }
-
-    private var canAddRoute: Bool {
-        !trimmedNewRoute.isEmpty && newRouteProblem == nil
-    }
-
-    private func addRoute() {
-        guard canAddRoute else { return }
-        routes.append(trimmedNewRoute)
-        newRoute = ""
-    }
-
-    /// The list as saved. A valid route still sitting in the add field
-    /// counts, so clicking Save without clicking Add first doesn't lose it.
-    private var savedRoutes: [String] {
-        canAddRoute ? routes + [trimmedNewRoute] : routes
+    /// Something typed in one of the add fields can't be saved as it is.
+    private var hasInvalidEntry: Bool {
+        routes.problem != nil || dnsServers.problem != nil || dnsDomains.problem != nil
     }
 }

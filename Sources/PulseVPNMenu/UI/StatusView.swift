@@ -116,9 +116,13 @@ struct StatusView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Text("Switch \(showPicker ? "▲" : "▾")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("Switch")
+                        .font(.system(size: 11))
+                    Image(systemName: showPicker ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -189,6 +193,19 @@ struct StatusView: View {
 
             StatsGraphView(stats: controller.stats, style: .card)
                 .frame(height: 84)
+
+            if let dns = appState.connectedDNSDescription {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("DNS")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    Text(dns)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                }
+            }
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color.primary.opacity(0.03)))
@@ -227,9 +244,9 @@ struct StatusView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text(showLog ? "▲" : "▾")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                    Image(systemName: showLog ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .contentShape(Rectangle())
             }

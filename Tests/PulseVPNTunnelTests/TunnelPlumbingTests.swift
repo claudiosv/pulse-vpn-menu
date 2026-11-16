@@ -148,10 +148,15 @@ private func receive(_ fd: Int32) -> [UInt8]? {
     @Test func configurationSurvivesTheProviderConfigurationDictionary() {
         let configuration = TunnelConfiguration(
             profileID: UUID(), vpnURL: "https://vpn.example.edu/emp", pinnedCertHash: "pin-sha256:abc",
-            verbose: true, routing: RoutingOptions(splitRoutes: ["10.0.0.0/8"], forceDefaultRoute: false)
+            verbose: true, routing: RoutingOptions(splitRoutes: ["10.0.0.0/8"], forceDefaultRoute: false),
+            dns: DNSOptions(servers: ["10.0.0.53"], domains: ["example.edu"])
         )
         #expect(TunnelConfiguration(providerConfiguration: configuration.providerConfiguration()) == configuration)
         #expect(TunnelConfiguration(providerConfiguration: nil) == nil)
+
+        // One saved before DNS options existed still loads.
+        let old = Data(#"{"profileID":"6F9619FF-8B86-D011-B42D-00C04FC964FF","vpnURL":"https://v","verbose":false,"routing":{"splitRoutes":[],"forceDefaultRoute":true}}"#.utf8)
+        #expect(TunnelConfiguration(providerConfiguration: ["configuration": old])?.dns == nil)
         #expect(TunnelConfiguration(providerConfiguration: ["configuration": Data("{}".utf8)]) == nil)
     }
 

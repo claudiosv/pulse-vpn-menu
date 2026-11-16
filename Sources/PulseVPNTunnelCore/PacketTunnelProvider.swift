@@ -82,6 +82,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
             plan = try TunnelPlan.make(
                 server: server,
                 routing: configuration.routing,
+                dns: configuration.dns,
                 fallbackRemoteAddress: URL(string: configuration.vpnURL)?.host ?? "0.0.0.0")
         } catch {
             session.log.append("\(error.localizedDescription)\n")
@@ -112,9 +113,11 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
             )
             lock.withLock { self.bridge = bridge }
             bridge.start()
-            if let address = plan.ipv4?.address {
-                session.setInterfaceName(interfaceName(forIPv4: address))
-            }
+            session.setTunnelDetails(
+                interfaceName: plan.ipv4.flatMap { interfaceName(forIPv4: $0.address) },
+                dnsServers: plan.dnsInUse ? plan.dnsServers : [],
+                dnsDomains: plan.matchDomains
+            )
             // The system now shows the tunnel as connected.
             lock.withLock { take(&startCompletion) }?(nil)
             return bridge.libraryFD

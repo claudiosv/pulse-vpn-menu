@@ -24,11 +24,17 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
     /// The tunnel's interface name (e.g. `utun6`) and IPv4 address, once up.
     public var interfaceName: String?
     public var address: String?
+    /// The DNS servers the tunnel put in place; nil or empty if it set none
+    /// (or none are in use).
+    public var dnsServers: [String]?
+    /// The domains those servers answer for; nil means everything.
+    public var dnsDomains: [String]?
 
     public init(
         linkState: LinkState, espEstablished: Bool, dropCount: Int, statsSequence: Int,
         sampledAt: Date, txPackets: UInt64, txBytes: UInt64, rxPackets: UInt64, rxBytes: UInt64,
-        interfaceName: String?, address: String?
+        interfaceName: String?, address: String?,
+        dnsServers: [String]? = nil, dnsDomains: [String]? = nil
     ) {
         self.linkState = linkState
         self.espEstablished = espEstablished
@@ -41,5 +47,7 @@ public struct SessionSnapshot: Codable, Sendable, Equatable {
         self.rxBytes = rxBytes
         self.interfaceName = interfaceName
         self.address = address
+        self.dnsServers = dnsServers
+        self.dnsDomains = dnsDomains
     }
 }

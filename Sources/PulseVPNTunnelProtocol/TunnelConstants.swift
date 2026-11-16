@@ -54,6 +54,21 @@ public struct RoutingOptions: Codable, Sendable, Equatable {
     }
 }
 
+/// A connection's own DNS choices, overriding what the server provides; see
+/// `TunnelPlan`.
+public struct DNSOptions: Codable, Sendable, Equatable {
+    /// Resolvers to use instead of the server's. Empty: the server's.
+    public var servers: [String]
+    /// The only domains to look up through the tunnel's resolvers. Empty:
+    /// decided by the routes and the server.
+    public var domains: [String]
+
+    public init(servers: [String] = [], domains: [String] = []) {
+        self.servers = servers
+        self.domains = domains
+    }
+}
+
 /// One connection's settings as the provider needs them. Saved (as JSON) in
 /// the VPN configuration that shows up in System Settings > VPN, so the
 /// provider has it however the tunnel was started.
@@ -67,16 +82,20 @@ public struct TunnelConfiguration: Codable, Sendable, Equatable {
     /// libopenconnect debug-level logging.
     public var verbose: Bool
     public var routing: RoutingOptions
+    /// Optional so configurations saved before it existed still decode.
+    public var dns: DNSOptions?
 
     public init(
         profileID: UUID, vpnURL: String, pinnedCertHash: String? = nil,
-        verbose: Bool = false, routing: RoutingOptions = RoutingOptions()
+        verbose: Bool = false, routing: RoutingOptions = RoutingOptions(),
+        dns: DNSOptions? = nil
     ) {
         self.profileID = profileID
         self.vpnURL = vpnURL
         self.pinnedCertHash = pinnedCertHash
         self.verbose = verbose
         self.routing = routing
+        self.dns = dns
     }
 
     /// The value for `NETunnelProviderProtocol.providerConfiguration`.

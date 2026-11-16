@@ -73,6 +73,49 @@ import Testing
         #expect(plan.matchDomains == ["example.edu"])
     }
 
+    @Test func theConnectionsOwnDNSReplacesTheServers() throws {
+        // Own servers, full tunnel: they are the default resolver.
+        let full = try TunnelPlan.make(
+            server: server, routing: RoutingOptions(),
+            dns: DNSOptions(servers: ["1.1.1.1", "bogus", "2606:4700::1111"]),
+            fallbackRemoteAddress: "vpn.example.edu")
+        #expect(full.dnsServers == ["1.1.1.1", "2606:4700::1111"])
+        #expect(full.matchDomains == nil)
+        #expect(full.dnsInUse)
+
+        // Own domains limit the resolver even for a full tunnel.
+        let scoped = try TunnelPlan.make(
+            server: server, routing: RoutingOptions(),
+            dns: DNSOptions(domains: ["corp.example.edu"]),
+            fallbackRemoteAddress: "vpn.example.edu")
+        #expect(scoped.dnsServers == ["10.0.0.53"])          // still the server's
+        #expect(scoped.matchDomains == ["corp.example.edu"])
+
+        // Split tunnel: the chosen resolver is what gets routed.
+        let split = try TunnelPlan.make(
+            server: server, routing: RoutingOptions(splitRoutes: ["169.237.0.0/16"]),
+            dns: DNSOptions(servers: ["169.237.250.250"], domains: ["ucdavis.edu"]),
+            fallbackRemoteAddress: "vpn.example.edu")
+        #expect(split.ipv4?.included == [
+            .init(address: "169.237.0.0", mask: "255.255.0.0"),
+            .init(address: "169.237.250.250", mask: "255.255.255.255"),
+        ])
+        #expect(split.matchDomains == ["ucdavis.edu"])
+
+        // Empty options change nothing.
+        #expect(try TunnelPlan.make(
+            server: server, routing: RoutingOptions(), dns: DNSOptions(),
+            fallbackRemoteAddress: "vpn.example.edu") == plan(server))
+    }
+
+    @Test func splitTunnelDNSWithNoDomainsIsNotInUse() throws {
+        var server = server
+        server.domains = []
+        let plan = try plan(server, RoutingOptions(splitRoutes: ["169.237.0.0/16"]))
+        #expect(plan.matchDomains == nil)
+        #expect(!plan.dnsInUse)
+    }
+
     @Test func handlesIPv6() throws {
         let server = OpenConnectNetworkConfig(netmask6: "2001:db8::5/64", dnsServers: ["2001:db8::53"])
         let full = try plan(server)

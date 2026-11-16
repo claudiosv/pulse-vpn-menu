@@ -22,6 +22,8 @@ public final class TunnelSession: @unchecked Sendable {
         var startedAt: Date?
         var certFailure: CertFailure?
         var interfaceName: String?
+        var dnsServers: [String]?
+        var dnsDomains: [String]?
     }
 
     private let lock = NSLock()
@@ -46,7 +48,10 @@ public final class TunnelSession: @unchecked Sendable {
             startedAt: core.startedAt,
             certFailure: core.certFailure,
             snapshot: core.state == .running
-                ? session?.snapshot().map { Self.wire($0, interfaceName: core.interfaceName) }
+                ? session?.snapshot().map {
+                    Self.wire($0, interfaceName: core.interfaceName,
+                              dnsServers: core.dnsServers, dnsDomains: core.dnsDomains)
+                }
                 : nil
         )
     }
@@ -115,10 +120,15 @@ public final class TunnelSession: @unchecked Sendable {
         onChange?()
     }
 
-    /// The name of the interface the system created for the tunnel, once
-    /// known (libopenconnect never sees it).
-    public func setInterfaceName(_ name: String?) {
-        lock.withLock { core.interfaceName = name }
+    /// What the provider put in place for the tunnel, which libopenconnect
+    /// never sees: the interface the system created, and the DNS servers in
+    /// use with the domains they answer for (nil: everything).
+    public func setTunnelDetails(interfaceName: String?, dnsServers: [String], dnsDomains: [String]?) {
+        lock.withLock {
+            core.interfaceName = interfaceName
+            core.dnsServers = dnsServers
+            core.dnsDomains = dnsDomains
+        }
     }
 
     public func cancel() { running?.cancel() }                      // ~ SIGTERM
@@ -146,7 +156,9 @@ public final class TunnelSession: @unchecked Sendable {
 
     // MARK: - Wire format
 
-    private static func wire(_ s: OpenConnectSnapshot, interfaceName: String?) -> SessionSnapshot {
+    private static func wire(
+        _ s: OpenConnectSnapshot, interfaceName: String?, dnsServers: [String]?, dnsDomains: [String]?
+    ) -> SessionSnapshot {
         let linkState: SessionSnapshot.LinkState
         switch s.linkState {
         case .connecting: linkState = .connecting
@@ -161,7 +173,8 @@ public final class TunnelSession: @unchecked Sendable {
             sampledAt: Date(timeIntervalSince1970: s.sampledAt),
             txPackets: s.txPackets, txBytes: s.txBytes,
             rxPackets: s.rxPackets, rxBytes: s.rxBytes,
-            interfaceName: interfaceName, address: s.address
+            interfaceName: interfaceName, address: s.address,
+            dnsServers: dnsServers, dnsDomains: dnsDomains
         )
     }
 }

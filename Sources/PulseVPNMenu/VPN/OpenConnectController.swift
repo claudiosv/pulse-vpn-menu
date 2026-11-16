@@ -79,6 +79,9 @@ final class OpenConnectController: ObservableObject {
     /// sample recorded, and the drop count already handled. Both restart at 0
     /// with each new session.
     private var tunnel: (name: String?, address: String)?
+    /// The DNS servers the tunnel put in place and the domains they answer
+    /// for (nil: everything); nil if it set none.
+    private var tunnelDNS: (servers: [String], domains: [String]?)?
     private var lastStatsSequence = 0
     private var lastDropCount = 0
 
@@ -204,6 +207,15 @@ final class OpenConnectController: ObservableObject {
     var connectedInterfaceDescription: String? {
         guard isConnected(), let tunnel else { return nil }
         return tunnel.name.map { "\($0), \(tunnel.address)" } ?? tunnel.address
+    }
+
+    /// e.g. "169.237.250.250, 169.237.1.250 · ucdavis.edu": the DNS servers
+    /// the tunnel put in place and what they answer for. Nil when not
+    /// connected or when the tunnel's DNS isn't in use.
+    var connectedDNSDescription: String? {
+        guard isConnected(), let tunnelDNS else { return nil }
+        let scope = tunnelDNS.domains.map { $0.joined(separator: ", ") } ?? "all domains"
+        return "\(tunnelDNS.servers.joined(separator: ", ")) · \(scope)"
     }
 
     /// Just the tunnel's address, e.g. "172.25.228.228", for the menu
@@ -369,6 +381,7 @@ final class OpenConnectController: ObservableObject {
         runtimeState = nil
         connectedProfileID = nil
         tunnel = nil
+        tunnelDNS = nil
     }
 
     func reconnect() async throws {
@@ -457,6 +470,7 @@ final class OpenConnectController: ObservableObject {
         runtimeState = nil
         connectedProfileID = nil
         tunnel = nil
+        tunnelDNS = nil
     }
 
     private func notifyLost(state: RuntimeState, reason: String) {
@@ -523,6 +537,11 @@ final class OpenConnectController: ObservableObject {
     private func apply(_ snapshot: SessionSnapshot, recordSample: Bool) {
         if let address = snapshot.address {
             tunnel = (snapshot.interfaceName, address)
+        }
+        if let servers = snapshot.dnsServers, !servers.isEmpty {
+            tunnelDNS = (servers, snapshot.dnsDomains)
+        } else {
+            tunnelDNS = nil
         }
 
         if recordSample, snapshot.statsSequence > 0, snapshot.statsSequence != lastStatsSequence {
@@ -642,6 +661,7 @@ final class OpenConnectController: ObservableObject {
         demoStartedAt = nil
         connectedProfileID = nil
         tunnel = nil
+        tunnelDNS = nil
     }
 
     private func runPostCommand(_ post: String) {

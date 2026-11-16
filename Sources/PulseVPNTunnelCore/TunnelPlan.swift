@@ -63,13 +63,15 @@ public struct TunnelPlan: Equatable, Sendable {
     ///   `routing.forceDefaultRoute` is set or the server asks for no
     ///   particular routes; otherwise the server's split-include routes.
     ///   The server's split-exclude routes are always honoured.
-    /// - DNS: the server's resolvers. For a full tunnel they become the
-    ///   default; for a split tunnel they answer only for the server's
-    ///   split-DNS domains (or, without any, its search domains), and are
-    ///   themselves routed through the tunnel.
+    /// - DNS: the server's resolvers, or `dns.servers` if given. For a full
+    ///   tunnel they become the default; for a split tunnel they answer only
+    ///   for the server's split-DNS domains (or, without any, its search
+    ///   domains), and are themselves routed through the tunnel. `dns.domains`,
+    ///   if given, replaces that choice in either case.
     public static func make(
         server: OpenConnectNetworkConfig,
         routing: RoutingOptions,
+        dns options: DNSOptions? = nil,
         fallbackRemoteAddress: String
     ) throws -> TunnelPlan {
         let userRoutes = routing.splitRoutes.map { $0.trimmingCharacters(in: .whitespaces) }
@@ -82,7 +84,8 @@ public struct TunnelPlan: Equatable, Sendable {
         let fullTunnel = !useUserRoutes
             && (routing.forceDefaultRoute || (server4.isEmpty && server6.isEmpty))
 
-        let dns = server.dnsServers.filter { isIPv4($0) || isIPv6($0) }
+        let chosen = (options?.servers ?? []).filter { isIPv4($0) || isIPv6($0) }
+        let dns = chosen.isEmpty ? server.dnsServers.filter { isIPv4($0) || isIPv6($0) } : chosen
 
         var ipv4: IPv4?
         if let address = server.address, isIPv4(address) {
@@ -124,7 +127,9 @@ public struct TunnelPlan: Equatable, Sendable {
         guard ipv4 != nil || ipv6 != nil else { throw PlanError.noUsableAddress }
 
         var matchDomains: [String]?
-        if !fullTunnel {
+        if let domains = options?.domains, !domains.isEmpty {
+            matchDomains = domains
+        } else if !fullTunnel {
             let domains = server.splitDNS.isEmpty ? server.domains : server.splitDNS
             matchDomains = domains.isEmpty ? nil : domains
         }
@@ -139,6 +144,12 @@ public struct TunnelPlan: Equatable, Sendable {
             mtu: (576...9000).contains(server.mtu) ? server.mtu : nil,
             isFullTunnel: fullTunnel
         )
+    }
+
+    /// Whether the system will actually consult `dnsServers`: always for a
+    /// full tunnel, otherwise only if there are domains for them to answer.
+    public var dnsInUse: Bool {
+        !dnsServers.isEmpty && (isFullTunnel || matchDomains != nil)
     }
 
     /// The settings to hand to `setTunnelNetworkSettings`.
