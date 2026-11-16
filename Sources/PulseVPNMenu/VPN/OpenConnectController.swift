@@ -449,7 +449,7 @@ final class OpenConnectController: ObservableObject {
         case (.exited, -EINTR):
             // Stopped on request, just not ours: System Settings > VPN.
             logStore.append("The VPN was disconnected outside the app.\n")
-            clearSavedLogin?(state.profileID)
+            if let profileID = state.profileID { clearSavedLogin?(profileID) }
             await tearDownAfterExit(state: state)
             return
         case (.exited, -EPERM):
