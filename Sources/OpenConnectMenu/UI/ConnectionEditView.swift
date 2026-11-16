@@ -197,7 +197,7 @@ struct ConnectionEditView: View {
                     prompt: "example.edu or *.example.edu",
                     footer: onDemandDomains.items.isEmpty
                         ? "No domains: the VPN only connects when you ask it to."
-                        : "Looking up a name in these domains, or their subdomains, connects the VPN when the name can't be resolved without it. OpenConnect Menu must be running to sign in. Disconnecting turns this off until you connect again or restart the app.",
+                        : "Looking up a name in these domains, or their subdomains, connects the VPN when the name can't be resolved without it. Names that also resolve on the public internet never trigger it. OpenConnect Menu must be running to sign in. Disconnecting turns this off until you connect again or restart the app.",
                     list: $onDemandDomains
                 )
                 Section("Advanced") {

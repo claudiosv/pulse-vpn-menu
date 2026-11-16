@@ -25,8 +25,8 @@ Where: `OpenConnectController.disconnect()`, `ConnectionStore.updateDSID`.
 See also "Clear cached cookie option" in [libopenconnect.md](libopenconnect.md).
 
 Done: `lastDSID` is cleared after a disconnect from the app and after a stop
-from System Settings (`OpenConnectController.clearSavedLogin`). Not done: the
-"Clear saved login" button.
+from System Settings (`OpenConnectController.clearSavedLogin`). The connection
+editor also has a "Saved login" row with a Clear button.
 
 ### 2. Connect from System Settings without the flicker (Done)
 
@@ -59,8 +59,13 @@ Where: `PacketTunnelProvider`, `TunnelSession.requestReconnect()`.
 
 Done: `wake()` and an `NWPathMonitor` (ignoring the tunnel's own interface)
 schedule a reconnect after 2 s. The monitor compares status, interfaces and
-gateways; a change of IP address on the same interface and gateway is not
-detected.
+gateways, and the IPv4 addresses of the physical interfaces
+(`NetworkAddresses.snapshot()`; IPv6 is left out because its temporary
+addresses rotate on their own). `NetworkAddressWatcher`, an `SCDynamicStore`
+watch on the IPv4 keys, triggers the comparison, so a DHCP renewal on the same
+interface and gateway is noticed. If the extension's sandbox refuses the store,
+the provider logs that and falls back to `NWPath` alone; not yet checked in a
+live session.
 
 ### 4. Connect on demand (Done)
 
@@ -102,11 +107,17 @@ final ignore rule. A user disconnect turns the rules off
 Limits: `.connectIfNeeded` fires only when the name can't be resolved without
 the VPN, so a name that also resolves publicly won't trigger it (there is no
 "always connect for this domain" action); and the app has to be running to
-sign in, otherwise the start gives up after the 180 s wait.
+sign in, otherwise the start gives up after the 180 s wait. The editor says
+so. For `*.cs.ucdavis.edu` this means internal-only hosts work and public ones
+don't: `login.cs.ucdavis.edu` has no public address, while `cs.ucdavis.edu` and
+`www.cs.ucdavis.edu` do resolve (checked with `dig`), so those two never
+trigger it. Closing the gap would need a different mechanism (a probe URL on
+an `NEOnDemandRuleConnect` reacts to unreachability, not to lookups) and was
+not attempted.
 
 ## Correctness and robustness
 
-### 5. Read ESP state directly (Partly done)
+### 5. Read ESP state directly (Done)
 
 "ESP session established" and link drops are detected by matching
 libopenconnect's log text (`note_progress` in `ocshim.c`). If upstream
@@ -114,13 +125,22 @@ rewords a line, ESP gating and drop notifications silently stop working.
 Reading `vpninfo->dtls_state` through `openconnect-internal.h` is sturdier,
 at the cost of tying the shim to the pinned libopenconnect version.
 
-Partly done: not the internal-header route, which needs the per-arch
-`config.h` from the build cache and so couples the shim tightly to the build.
-Instead `LogMarkerTests` fails if any text the shim matches (`drop_markers`
-and "ESP session established") is no longer in `third_party/openconnect`.
-That test found a marker the pinned version never logs
-(`server closed connection`); the shim now matches `read error on` and
-`ssl connection failure` instead.
+Done, without the internal header (it needs the per-arch `config.h` from the
+build cache and ties the shim tightly to the build). Instead
+`scripts/patches/oc-dtls-state.patch` adds one function,
+`openconnect_get_dtls_state()`, to libopenconnect; `build-openconnect.sh`
+applies it to its cached copy of the pinned source and stops if it no longer
+applies after a submodule bump. The shim polls it on every stats sample and
+sets the ESP flag from it, so ESP is noticed even if the log line is reworded.
+The state value it compares with (`DTLS_CONNECTED`, 5) is internal, so
+`LogMarkerTests` checks it against `third_party/openconnect`.
+
+Link drops still rely on log text (`drop_markers`; libopenconnect has no state
+for them), and `LogMarkerTests` fails if any of those strings, or the ESP line
+the shim still uses as a fast path, is no longer in the vendored source. That
+test found a marker the pinned version never logs (`server closed
+connection`); the shim now matches `read error on` and `ssl connection
+failure` instead.
 
 ### 6. Don't require ESP to call the tunnel connected (Done)
 
@@ -206,11 +226,6 @@ The tunnel side has unit tests; the app has none. Worth covering first:
 `isValidRoute`, `isValidAddress`, `isValidDomain`.
 
 Done: `Tests/OpenConnectMenuTests`.
-
-### 12. Universal build
-
-`OC_ARCHS="arm64 x86_64"` is supported by `scripts/build-openconnect.sh` but
-has never been built or run.
 
 ## Only if needed
 
