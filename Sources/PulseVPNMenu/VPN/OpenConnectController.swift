@@ -378,6 +378,7 @@ final class OpenConnectController: ObservableObject {
 
         stopStatsTimer()
         let profileID = runtimeState?.profileID
+        if let profileID { await TunnelClient.shared.suspendOnDemand(for: profileID) }
 
         TunnelClient.shared.stop()
         logStore.append("Asked the VPN session to stop.\n")

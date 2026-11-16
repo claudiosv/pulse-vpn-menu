@@ -87,12 +87,17 @@ public struct TunnelConfiguration: Codable, Sendable, Equatable {
     public var routing: RoutingOptions
     /// Optional so configurations saved before it existed still decode.
     public var dns: DNSOptions?
+    /// Domains whose lookup should bring the tunnel up (connect on demand).
+    /// Empty or nil: on demand is off. Used by the app to set the system's
+    /// on-demand rules; the provider ignores it.
+    public var onDemandDomains: [String]?
 
     public init(
         profileID: UUID, vpnURL: String, pinnedCertHash: String? = nil,
         verbose: Bool = false, routing: RoutingOptions = RoutingOptions(),
-        dns: DNSOptions? = nil
+        dns: DNSOptions? = nil, onDemandDomains: [String]? = nil
     ) {
+        self.onDemandDomains = onDemandDomains
         self.profileID = profileID
         self.vpnURL = vpnURL
         self.pinnedCertHash = pinnedCertHash

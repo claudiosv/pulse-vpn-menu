@@ -99,6 +99,7 @@ struct ConnectionEditView: View {
     @State private var routes: EditableList
     @State private var dnsServers: EditableList
     @State private var dnsDomains: EditableList
+    @State private var onDemandDomains: EditableList
     @State private var post: String
     @State private var noDefaultRoute: Bool
     @State private var debug: Bool
@@ -134,6 +135,10 @@ struct ConnectionEditView: View {
             invalidMessage: "Enter the IP address of a DNS server, e.g. 169.237.250.250."))
         self._dnsDomains = State(initialValue: EditableList(
             items: profile.dnsDomainList,
+            isValid: ConnectionProfile.isValidDomain,
+            invalidMessage: "Enter a domain name, e.g. example.edu or *.example.edu."))
+        self._onDemandDomains = State(initialValue: EditableList(
+            items: profile.onDemandDomainList,
             isValid: ConnectionProfile.isValidDomain,
             invalidMessage: "Enter a domain name, e.g. example.edu or *.example.edu."))
         self._post = State(initialValue: profile.post ?? "")
@@ -187,6 +192,14 @@ struct ConnectionEditView: View {
                         : "Only names in these domains, and their subdomains, are looked up through the VPN's DNS.",
                     list: $dnsDomains
                 )
+                ListSection(
+                    title: "Connect on Demand",
+                    prompt: "example.edu or *.example.edu",
+                    footer: onDemandDomains.items.isEmpty
+                        ? "No domains: the VPN only connects when you ask it to."
+                        : "Looking up a name in these domains, or their subdomains, connects the VPN when the name can't be resolved without it. Pulse VPN Menu must be running to sign in. Disconnecting turns this off until you connect again or restart the app.",
+                    list: $onDemandDomains
+                )
                 Section("Advanced") {
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Use the server's routes instead of sending all traffic", isOn: $noDefaultRoute)
@@ -222,6 +235,7 @@ struct ConnectionEditView: View {
                             splitRoutes: routes.saved,
                             dnsServers: dnsServers.saved,
                             dnsDomains: dnsDomains.saved,
+                            onDemandDomains: onDemandDomains.saved,
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,
@@ -245,5 +259,6 @@ struct ConnectionEditView: View {
     /// Something typed in one of the add fields can't be saved as it is.
     private var hasInvalidEntry: Bool {
         routes.problem != nil || dnsServers.problem != nil || dnsDomains.problem != nil
+            || onDemandDomains.problem != nil
     }
 }

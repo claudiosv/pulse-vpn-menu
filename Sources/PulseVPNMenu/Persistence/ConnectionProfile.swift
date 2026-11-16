@@ -20,6 +20,9 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     /// The only domains to look up through the VPN's DNS, in the same list
     /// format. Empty leaves that to the routes and the server.
     var dnsDomains: String?
+    /// Domains whose lookup brings the VPN up by itself (connect on demand),
+    /// in the same list format. Empty turns it off.
+    var onDemandDomains: String?
     /// Command to run once the tunnel is up.
     var post: String?
     /// Don't force everything through the tunnel: use the server's own
@@ -42,6 +45,7 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         splitRoutes: String? = nil,
         dnsServers: String? = nil,
         dnsDomains: String? = nil,
+        onDemandDomains: String? = nil,
         post: String? = nil,
         noDefaultRoute: Bool = false,
         debug: Bool = false,
@@ -54,6 +58,7 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         self.splitRoutes = splitRoutes
         self.dnsServers = dnsServers
         self.dnsDomains = dnsDomains
+        self.onDemandDomains = onDemandDomains
         self.post = post
         self.noDefaultRoute = noDefaultRoute
         self.debug = debug
@@ -65,6 +70,7 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     var splitRouteList: [String] { Self.entries(splitRoutes) }
     var dnsServerList: [String] { Self.entries(dnsServers) }
     var dnsDomainList: [String] { Self.entries(dnsDomains) }
+    var onDemandDomainList: [String] { Self.entries(onDemandDomains) }
 
     /// A stored list (entries separated by commas or whitespace) taken apart.
     private static func entries(_ list: String?) -> [String] {
@@ -122,7 +128,8 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
             pinnedCertHash: pinnedCertHash,
             verbose: debug,
             routing: RoutingOptions(splitRoutes: splitRouteList, forceDefaultRoute: !noDefaultRoute),
-            dns: DNSOptions(servers: dnsServerList, domains: dnsDomainList)
+            dns: DNSOptions(servers: dnsServerList, domains: dnsDomainList),
+            onDemandDomains: onDemandDomainList
         )
     }
 
@@ -141,6 +148,7 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
         vpnURL = try values.decode(String.self, forKey: .vpnURL)
         dnsServers = try values.decodeIfPresent(String.self, forKey: .dnsServers)
         dnsDomains = try values.decodeIfPresent(String.self, forKey: .dnsDomains)
+        onDemandDomains = try values.decodeIfPresent(String.self, forKey: .onDemandDomains)
         post = try values.decodeIfPresent(String.self, forKey: .post)
         noDefaultRoute = try values.decodeIfPresent(Bool.self, forKey: .noDefaultRoute) ?? false
         debug = try values.decodeIfPresent(Bool.self, forKey: .debug) ?? false

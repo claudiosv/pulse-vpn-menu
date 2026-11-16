@@ -50,6 +50,9 @@ final class TunnelClient {
     var onLoginNeeded: ((UUID) -> Void)?
 
     private var managers: [UUID: NETunnelProviderManager] = [:]
+    /// Profiles whose on-demand rules are off because the user disconnected;
+    /// they come back with the next connect or app launch.
+    private var onDemandSuspended: Set<UUID> = []
     private var managersLoaded = false
 
     /// The session being followed, if any.
@@ -136,8 +139,10 @@ final class TunnelClient {
         let host = URL(string: profile.vpnURL)?.host ?? profile.vpnURL
         let current = manager.protocolConfiguration as? NETunnelProviderProtocol
 
+        let onDemand = !(wanted.onDemandDomains ?? []).isEmpty && !onDemandSuspended.contains(profile.id)
         let upToDate = managers[profile.id] != nil
             && Self.configuration(of: manager) == wanted
+            && manager.isOnDemandEnabled == onDemand
             && manager.localizedDescription == profile.name
             && current?.serverAddress == host
             && manager.isEnabled
@@ -153,11 +158,39 @@ final class TunnelClient {
         manager.protocolConfiguration = proto
         manager.localizedDescription = profile.name
         manager.isEnabled = true
+        Self.applyOnDemand(wanted.onDemandDomains ?? [], enabled: onDemand, to: manager)
         try await Self.save(manager)
         // A freshly saved manager can't start a tunnel until it is reloaded.
         try await Self.load(manager)
         managers[profile.id] = manager
         return manager
+    }
+
+    /// Connect when a name in `domains` can't be resolved without the VPN.
+    private static func applyOnDemand(_ domains: [String], enabled: Bool, to manager: NETunnelProviderManager) {
+        // matchDomains already covers subdomains; a leading "*." is only
+        // how the list is written.
+        let names = domains.map { $0.hasPrefix("*.") ? String($0.dropFirst(2)) : $0 }
+        guard enabled, !names.isEmpty else {
+            manager.isOnDemandEnabled = false
+            manager.onDemandRules = nil
+            return
+        }
+        let evaluate = NEOnDemandRuleEvaluateConnection()
+        evaluate.connectionRules = [NEEvaluateConnectionRule(matchDomains: names, andAction: .connectIfNeeded)]
+        manager.onDemandRules = [evaluate, NEOnDemandRuleIgnore()]
+        manager.isOnDemandEnabled = true
+    }
+
+    /// The user disconnected: stop the system reconnecting on the next
+    /// lookup until they connect again.
+    func suspendOnDemand(for profileID: UUID) async {
+        guard let manager = managers[profileID], manager.isOnDemandEnabled else { return }
+        onDemandSuspended.insert(profileID)
+        await serialized {
+            manager.isOnDemandEnabled = false
+            try? await Self.save(manager)
+        }
     }
 
     private static func configuration(of manager: NETunnelProviderManager) -> TunnelConfiguration? {
@@ -181,6 +214,7 @@ final class TunnelClient {
     /// the system has begun bringing it up. Progress then arrives through
     /// `onStatus`.
     func start(profile: ConnectionProfile, cookie: String) async throws {
+        onDemandSuspended.remove(profile.id)
         // A start from System Settings is waiting for exactly this cookie:
         // hand it over instead of restarting, so the switch doesn't flicker.
         if let active, active.profileID == profile.id, latest?.awaitingLogin == true,
