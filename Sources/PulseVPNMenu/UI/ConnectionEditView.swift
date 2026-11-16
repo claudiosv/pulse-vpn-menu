@@ -6,7 +6,10 @@ struct ConnectionEditView: View {
 
     @State private var name: String
     @State private var vpnURL: String
-    @State private var splitRoutes: String
+    /// The "Only route" list: one address or CIDR range per entry.
+    @State private var routes: [String]
+    /// What is typed in the list's add field, not yet added.
+    @State private var newRoute = ""
     @State private var post: String
     @State private var noDefaultRoute: Bool
     @State private var debug: Bool
@@ -32,7 +35,7 @@ struct ConnectionEditView: View {
         self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
         self._vpnURL = State(initialValue: profile.vpnURL)
-        self._splitRoutes = State(initialValue: profile.splitRoutes ?? "")
+        self._routes = State(initialValue: profile.splitRouteList)
         self._post = State(initialValue: profile.post ?? "")
         self._noDefaultRoute = State(initialValue: profile.noDefaultRoute)
         self._debug = State(initialValue: profile.debug)
@@ -60,8 +63,47 @@ struct ConnectionEditView: View {
                         .textContentType(.URL)
                         .autocorrectionDisabled()
                 }
+                Section {
+                    ForEach(routes, id: \.self) { route in
+                        HStack {
+                            Text(route)
+                                .font(.system(.body, design: .monospaced))
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button {
+                                routes.removeAll { $0 == route }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove \(route)")
+                            .accessibilityLabel("Remove \(route)")
+                        }
+                    }
+                    HStack {
+                        TextField("Add route", text: $newRoute, prompt: Text("169.237.0.0/16 or 10.1.2.3"))
+                            .labelsHidden()
+                            .font(.system(.body, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .onSubmit(addRoute)
+                        Button("Add", action: addRoute)
+                            .disabled(!canAddRoute)
+                    }
+                    if let problem = newRouteProblem {
+                        Text(problem)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                } header: {
+                    Text("Only Route")
+                } footer: {
+                    Text(routes.isEmpty
+                        ? "No routes: all traffic goes through the VPN (or the server's routes, if chosen below)."
+                        : "Only these destinations go through the VPN.")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 Section("Advanced") {
-                    TextField("Only route", text: $splitRoutes, prompt: Text("e.g. 169.237.0.0/16, 10.1.2.3 — blank for all traffic"))
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Use the server's routes instead of sending all traffic", isOn: $noDefaultRoute)
                     Toggle("Verbose logging", isOn: $debug)
@@ -93,7 +135,7 @@ struct ConnectionEditView: View {
                             id: profileID,
                             name: name.isEmpty ? "Untitled" : name,
                             vpnURL: vpnURL,
-                            splitRoutes: splitRoutes.isEmpty ? nil : splitRoutes,
+                            splitRoutes: savedRoutes.isEmpty ? nil : savedRoutes.joined(separator: ", "),
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,
@@ -105,12 +147,46 @@ struct ConnectionEditView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
-                .disabled(name.isEmpty || vpnURL.isEmpty)
+                .disabled(name.isEmpty || vpnURL.isEmpty || newRouteProblem != nil)
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 520, height: 560)
         .background(.ultraThinMaterial)
+    }
+
+    // MARK: - Routes
+
+    private var trimmedNewRoute: String {
+        newRoute.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Why the typed route can't be added, or nil if it can (or the field
+    /// is empty).
+    private var newRouteProblem: String? {
+        let route = trimmedNewRoute
+        if route.isEmpty { return nil }
+        if !ConnectionProfile.isValidRoute(route) {
+            return "Enter an IP address or a CIDR range, e.g. 169.237.0.0/16 or 10.1.2.3."
+        }
+        if routes.contains(route) { return "That route is already in the list." }
+        return nil
+    }
+
+    private var canAddRoute: Bool {
+        !trimmedNewRoute.isEmpty && newRouteProblem == nil
+    }
+
+    private func addRoute() {
+        guard canAddRoute else { return }
+        routes.append(trimmedNewRoute)
+        newRoute = ""
+    }
+
+    /// The list as saved. A valid route still sitting in the add field
+    /// counts, so clicking Save without clicking Add first doesn't lose it.
+    private var savedRoutes: [String] {
+        canAddRoute ? routes + [trimmedNewRoute] : routes
     }
 }

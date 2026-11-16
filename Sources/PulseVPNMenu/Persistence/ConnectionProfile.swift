@@ -58,6 +58,24 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
             .map(String.init)
     }
 
+    /// Whether `text` can be a split route: an IPv4 or IPv6 address,
+    /// optionally followed by `/` and a prefix length in range.
+    static func isValidRoute(_ text: String) -> Bool {
+        let parts = text.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        var v4 = in_addr(), v6 = in6_addr()
+        let maxPrefix: Int
+        if inet_pton(AF_INET, parts[0], &v4) == 1 {
+            maxPrefix = 32
+        } else if inet_pton(AF_INET6, parts[0], &v6) == 1 {
+            maxPrefix = 128
+        } else {
+            return false
+        }
+        guard parts.count == 2 else { return true }
+        guard let prefix = Int(parts[1]), parts[1].allSatisfy(\.isNumber) else { return false }
+        return (0...maxPrefix).contains(prefix)
+    }
+
     /// What the packet tunnel provider needs to run this connection. The
     /// login cookie is deliberately not part of it.
     var tunnelConfiguration: TunnelConfiguration {
