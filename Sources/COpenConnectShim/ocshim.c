@@ -125,8 +125,39 @@ static void reconnected(void *priv)
         notify_changed(s);
 }
 
+/* Whether the caller's trust_chain callback accepts the peer's chain. */
+static int chain_trusted_by_system(struct ocshim *s)
+{
+    struct oc_cert *chain = NULL;
+    const unsigned char **ders = NULL;
+    int *lens = NULL;
+    int i, n, ok = 0;
+    const char *host;
+
+    n = openconnect_get_peer_cert_chain(s->vpninfo, &chain);
+    if (n > 0 && chain) {
+        ders = calloc(n, sizeof(*ders));
+        lens = calloc(n, sizeof(*lens));
+        if (ders && lens) {
+            for (i = 0; i < n; i++) {
+                ders[i] = chain[i].der_data;
+                lens[i] = chain[i].der_len;
+            }
+            host = openconnect_get_dnsname(s->vpninfo);
+            if (!host)
+                host = openconnect_get_hostname(s->vpninfo);
+            ok = s->cb.trust_chain(s->ctx, ders, lens, n, host);
+        }
+    }
+    free(ders);
+    free(lens);
+    if (chain)
+        openconnect_free_peer_cert_chain(s->vpninfo, chain);
+    return ok;
+}
+
 /* A certificate that fails normal validation is accepted only if it matches
- * the caller's pin; otherwise the app is told (so it can offer to pin it)
+ * the caller's pin or the system trusts it; otherwise the app is told (so it can offer to pin it)
  * and the connection aborts. */
 static int validate_peer_cert(void *priv, const char *reason)
 {
@@ -136,6 +167,10 @@ static int validate_peer_cert(void *priv, const char *reason)
     if (s->pinned_cert && *s->pinned_cert &&
         openconnect_check_peer_cert_hash(s->vpninfo, s->pinned_cert) == 0) {
         emitf(s, PRG_INFO, "Accepting pinned server certificate (%s)\n", reason);
+        return 0;
+    }
+    if (s->cb.trust_chain && chain_trusted_by_system(s)) {
+        emitf(s, PRG_INFO, "Accepting server certificate trusted by the system (%s)\n", reason);
         return 0;
     }
     emitf(s, PRG_ERR, "Server certificate rejected: %s (%s)\n", reason, hash ? hash : "no hash");

@@ -95,6 +95,7 @@ public final class TunnelSession: @unchecked Sendable {
                     self?.core.certFailure = CertFailure(reason: reason, hash: hash)
                 }
             },
+            trustChain: { chain, host in SystemTrust.trusts(chain: chain, host: host) },
             stateChanged: { [weak self] in
                 self?.onChange?()
             }

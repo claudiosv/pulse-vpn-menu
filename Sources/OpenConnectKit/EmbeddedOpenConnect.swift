@@ -63,6 +63,10 @@ public struct OpenConnectHandlers: Sendable {
     /// Certificate failed validation and didn't match the pin; `hash` is the
     /// `pin-sha256:...` value to pass as `pinnedCert` to trust it.
     public var certRejected: @Sendable (_ reason: String, _ hash: String?) -> Void
+    /// A certificate failed libopenconnect's own validation: does the system
+    /// trust this chain (DER, leaf first) for this host name? Return true to
+    /// accept the connection. Called on the session thread.
+    public var trustChain: @Sendable (_ chain: [Data], _ host: String?) -> Bool
     /// Link state, ESP flag, drop count or tunnel identity changed (not the
     /// counters). Fires on a libopenconnect thread; read `snapshot()`.
     public var stateChanged: @Sendable () -> Void
@@ -71,11 +75,13 @@ public struct OpenConnectHandlers: Sendable {
         log: @escaping @Sendable (Int, String) -> Void = { _, _ in },
         configureTunnel: @escaping @Sendable (OpenConnectNetworkConfig) -> Int32 = { _ in -ENOTSUP },
         certRejected: @escaping @Sendable (String, String?) -> Void = { _, _ in },
+        trustChain: @escaping @Sendable ([Data], String?) -> Bool = { _, _ in false },
         stateChanged: @escaping @Sendable () -> Void = {}
     ) {
         self.log = log
         self.configureTunnel = configureTunnel
         self.certRejected = certRejected
+        self.trustChain = trustChain
         self.stateChanged = stateChanged
     }
 }
@@ -121,6 +127,14 @@ public final class EmbeddedOpenConnect: @unchecked Sendable {
             cert_rejected: { ctx, reason, hash in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
                 me.handlers.certRejected(String(cString: reason!), hash.map { String(cString: $0) })
+            },
+            trust_chain: { ctx, ders, lens, count, host in
+                let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()
+                var chain: [Data] = []
+                for index in 0..<Int(count) {
+                    if let der = ders?[index] { chain.append(Data(bytes: der, count: Int(lens![index]))) }
+                }
+                return me.handlers.trustChain(chain, host.map { String(cString: $0) }) ? 1 : 0
             },
             state_changed: { ctx in
                 let me = Unmanaged<EmbeddedOpenConnect>.fromOpaque(ctx!).takeUnretainedValue()

@@ -53,6 +53,12 @@ typedef struct {
      * "pin-sha256:..." fingerprint to pass back as the pin if the user
      * decides to trust it. */
     void (*cert_rejected)(void *ctx, const char *reason, const char *hash);
+    /* Optional. The server's certificate failed OpenSSL's validation and did
+     * not match the pin. Asks whether the system (keychain) trusts the chain
+     * `ders[0..count)` (DER, leaf first) for `hostname`; return nonzero to
+     * accept the connection. */
+    int (*trust_chain)(void *ctx, const unsigned char *const *ders, const int *lens,
+                       int count, const char *hostname);
     /* The snapshot's link state, ESP flag, drop count or tunnel identity
      * changed (not the counters). Called on whichever libopenconnect thread
      * noticed, with no shim locks held; read the new state with
