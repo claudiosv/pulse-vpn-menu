@@ -404,6 +404,7 @@ final class OpenConnectController: ObservableObject {
             runPostCommand(post)
         }
         startStatsTimer()
+        checkTunnelDNS(status.snapshot)
         return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
     }
 
@@ -477,7 +478,46 @@ final class OpenConnectController: ObservableObject {
         }
 
         logStore.append("Reconnected; VPN interface IP: \(ip)\n")
+        checkTunnelDNS(status.snapshot)
     }
+
+    // MARK: - DNS check
+
+    /// Right after the tunnel is up (the log's "Routing through the tunnel"
+    /// line names its DNS servers), asks each of them a real question. A
+    /// tunnel can be "connected" and still carry nothing, and the only
+    /// symptom is then lookups failing; this says so in the log at once.
+    /// Runs in the background and writes into the session log.
+    private func checkTunnelDNS(_ snapshot: SessionSnapshot?) {
+        guard let servers = snapshot?.dnsServers, !servers.isEmpty else { return }
+        // A name the servers should know: the first domain they are used
+        // for, otherwise the root.
+        let name = snapshot?.dnsDomains?.first.map { $0.hasPrefix("*.") ? String($0.dropFirst(2)) : $0 } ?? "."
+
+        Task { [weak self] in
+            let results = await withTaskGroup(of: DNSProbe.Result.self) { group in
+                for server in servers { group.addTask { await DNSProbe.probe(server: server, name: name) } }
+                var all: [DNSProbe.Result] = []
+                for await result in group { all.append(result) }
+                return all
+            }
+            guard let self, self.isConnected() else { return }
+            let ordered = servers.compactMap { server in results.first { $0.server == server } }
+
+            let stamp = Self.logTimestamp.string(from: Date())
+            SessionLogFile.append(ordered.map { "[\(stamp)] DNS check: \($0.summary)" })
+            if !ordered.contains(where: \.answered) {
+                let warning = "None of the tunnel's DNS servers answered, so names under \(name == "." ? "the VPN's domains" : name) will not resolve. The tunnel is up but may not be passing traffic; try Reconnect."
+                self.logStore.append(warning + "\n")
+            }
+        }
+    }
+
+    private static let logTimestamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter
+    }()
 
     // MARK: - Unrequested disconnects
 
