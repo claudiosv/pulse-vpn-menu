@@ -340,8 +340,8 @@ private struct MenuHeaderView: View {
     @ObservedObject var stats: StatsHistory
     @ObservedObject var connectionStore: ConnectionStore
 
-    /// Badge width plus the gap after it, so the detail lines and graph
-    /// start at the profile name's leading edge.
+    /// The lock badge's size and the gap after it. The detail line and graph
+    /// below run the full width of the row, starting under the badge.
     private static let badgeSize: CGFloat = 16
     private static let badgeGap: CGFloat = 7
 
@@ -379,7 +379,6 @@ private struct MenuHeaderView: View {
 
                     StatsGraphView(stats: stats, style: .menu)
                 }
-                .padding(.leading, Self.badgeSize + Self.badgeGap)
             }
         }
         .padding(.horizontal, 14)
