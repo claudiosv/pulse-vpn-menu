@@ -58,7 +58,8 @@ static void emitf(struct ocshim *s, int level, const char *fmt, ...)
  * below covers the other direction without any text.) */
 static const char *const drop_markers[] = {
     "detected dead peer",
-    "server closed connection",
+    "read error on",
+    "ssl connection failure",
     "failed to reconnect to host",
     "remaining timeout",
 };
