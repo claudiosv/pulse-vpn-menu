@@ -27,8 +27,11 @@ enum LegacyHelperCleanup {
                 log("Removed the retired helper daemon from Login Items.\n")
                 UserDefaults.standard.set(true, forKey: doneKey)
             } catch {
-                // Tried again next launch.
-                log("Could not remove the retired helper daemon: \(error.localizedDescription)\n")
+                // Typically the system no longer links the service to this
+                // app (status notFound), so only a manual removal works.
+                // Don't keep trying on every launch.
+                log("Could not remove the retired helper daemon: \(error.localizedDescription). Remove it by hand: sudo launchctl bootout system/com.claudiosv.pulse-vpn-menu.helper\n")
+                UserDefaults.standard.set(true, forKey: doneKey)
             }
         }
     }

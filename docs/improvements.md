@@ -170,6 +170,13 @@ Done: `LegacyHelperCleanup` runs once at launch. The helper's launchd plist is
 bundled again (`Resources/LegacyHelper`, copied by `build.sh`) because
 `SMAppService` needs it to find the service.
 
+Limit, found on the first machine it ran on: where the system has lost the link
+between the old registration and the app, `SMAppService` reports `.notFound`
+and `unregister()` fails with "Operation not permitted". The app then logs the
+manual command (`sudo launchctl bootout system/com.claudiosv.pulse-vpn-menu.helper`)
+once and stops trying. The automatic path only helps where the registration is
+still visible to `SMAppService`.
+
 ### 10. Rename the internals
 
 The bundle identifiers are `ai.claudio.openconnect[.networkextension]`, but
