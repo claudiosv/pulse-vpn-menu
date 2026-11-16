@@ -50,6 +50,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = buildMainMenu()
         Notifier.shared.install()
+        Task { [logStore = appState.logStore] in
+            await LegacyHelperCleanup.runOnce { logStore.append($0) }
+        }
         let settings = appState.appSettings
         if settings.notifyOnUnexpectedDisconnect || settings.notifyOnTransientDrops {
             Notifier.shared.requestAuthorizationIfNeeded()

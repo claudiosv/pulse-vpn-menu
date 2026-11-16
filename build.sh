@@ -95,6 +95,13 @@ strip -x "${TUNNEL_BUNDLE}/Contents/MacOS/${TUNNEL_EXECUTABLE_NAME}"
 echo "==> Bundling the libopenconnect license"
 cp vendor/openconnect/COPYING.LGPL "${APP_BUNDLE}/Contents/Resources/openconnect-COPYING.LGPL"
 
+# The retired root helper's launchd plist, kept only so the app can find and
+# unregister that service on first launch (LegacyHelperCleanup). Its
+# BundleProgram no longer exists; nothing is ever started from it.
+mkdir -p "${APP_BUNDLE}/Contents/Library/LaunchDaemons"
+cp Resources/LegacyHelper/com.claudiosv.pulse-vpn-menu.helper.plist \
+    "${APP_BUNDLE}/Contents/Library/LaunchDaemons/"
+
 echo "==> Writing Info.plist"
 cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
