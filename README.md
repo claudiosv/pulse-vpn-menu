@@ -47,8 +47,8 @@ the raw `.build/release/PulseVPNMenu` binary.
 ## Usage
 
 1. Launch the app (menu bar icon appears; no Dock icon).
-2. Open the main window from the menu (**Open Pulse VPN Menu…**, or
-   **Settings…** / **Logs…** to land on a specific tab). It has four tabs:
+2. Open the main window from the menu (**Settings…** or **Logs…**, which
+   land on those tabs). It has four tabs:
    - **Status** — a power button that connects/disconnects the default
      connection, the live tunnel's duration and RX/TX totals, the traffic
      graph, and a peek at recent log activity.

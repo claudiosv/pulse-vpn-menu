@@ -116,6 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
+        // By default AppKit enables every item that has a target and action,
+        // overriding `isEnabled`; `menuNeedsUpdate` decides instead.
+        menu.autoenablesItems = false
 
         let header = NSHostingView(
             rootView: MenuHeaderView(
@@ -147,7 +150,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(reconnectItem)
 
         menu.addItem(.separator())
-        menu.addItem(actionItem(title: "Open Pulse VPN Menu…") { [weak self] in self?.showMain(tab: .status) })
         let settingsItem = actionItem(title: "Settings…") { [weak self] in self?.showMain(tab: .general) }
         settingsItem.keyEquivalent = ","
         menu.addItem(settingsItem)
@@ -180,7 +182,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Refreshes everything that can change between menu opens: the
     /// Connect item's title/action/submenu (the profile list can change any
-    /// time via Settings) and every item's enabled state.
+    /// time via Settings), and which of Connect / Disconnect / Reconnect are
+    /// offered. Only the ones that apply are shown — Connect while
+    /// disconnected, Disconnect and Reconnect while connected — and those
+    /// are dimmed while an action is already in progress.
     func menuNeedsUpdate(_ menu: NSMenu) {
         headerView.layoutSubtreeIfNeeded()
         headerView.frame.size = headerView.fittingSize
@@ -210,9 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             connectItem.submenu = submenu
         }
 
-        connectItem.isEnabled = !connected && !busy
-        disconnectItem.isEnabled = connected && !busy
-        reconnectItem.isEnabled = connected && !busy
+        connectItem.isHidden = connected
+        disconnectItem.isHidden = !connected
+        reconnectItem.isHidden = !connected
+
+        connectItem.isEnabled = !busy
+        disconnectItem.isEnabled = !busy
+        reconnectItem.isEnabled = !busy
+        // A parent item's own state doesn't reach its submenu.
+        connectItem.submenu?.autoenablesItems = false
+        connectItem.submenu?.items.forEach { $0.isEnabled = !busy }
     }
 
     // MARK: - Windows
