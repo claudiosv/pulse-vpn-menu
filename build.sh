@@ -10,8 +10,8 @@
 # The Network Extension entitlements are restricted: both the app and the
 # extension must embed a Developer ID provisioning profile that grants them,
 # or macOS refuses to launch either. Put the two profiles at
-#   signing/app.provisionprofile      (App ID com.claudiosv.pulse-vpn-menu)
-#   signing/tunnel.provisionprofile   (App ID com.claudiosv.pulse-vpn-menu.tunnel)
+#   signing/app.provisionprofile      (App ID ai.claudio.openconnect)
+#   signing/tunnel.provisionprofile   (App ID ai.claudio.openconnect.networkextension)
 # or point PULSE_APP_PROFILE / PULSE_TUNNEL_PROFILE at them. See
 # docs/network-extension.md for how to create them. PULSE_ALLOW_MISSING_PROFILES=1
 # builds without them, for inspecting the bundle only: it will not run.
@@ -19,11 +19,11 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP_NAME="Pulse VPN Menu"
-BUNDLE_ID="com.claudiosv.pulse-vpn-menu"
+BUNDLE_ID="ai.claudio.openconnect"
 EXECUTABLE_NAME="PulseVPNMenu"
 TUNNEL_EXECUTABLE_NAME="PulseVPNTunnel"
 # Must match TunnelConstants.extensionBundleIdentifier.
-TUNNEL_BUNDLE_ID="com.claudiosv.pulse-vpn-menu.tunnel"
+TUNNEL_BUNDLE_ID="ai.claudio.openconnect.networkextension"
 TEAM_ID="5HN43G3472"
 VERSION="0.2.0"
 # The system replaces an installed system extension only when its version

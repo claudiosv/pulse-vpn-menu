@@ -13,9 +13,9 @@ that grants them. For Developer ID distribution that means two profiles from
 the Apple Developer portal (team `5HN43G3472`):
 
 1. **Identifiers** — create (or edit) two App IDs:
-   - `com.claudiosv.pulse-vpn-menu` with capabilities **Network Extensions**
+   - `ai.claudio.openconnect` with capabilities **Network Extensions**
      and **System Extension**.
-   - `com.claudiosv.pulse-vpn-menu.tunnel` with capability **Network
+   - `ai.claudio.openconnect.networkextension` with capability **Network
      Extensions**.
 2. **Profiles** — create a **Developer ID** provisioning profile for each App
    ID (Distribution > Developer ID, using the Developer ID Application
@@ -51,7 +51,7 @@ Every build has a new build number, so an updated app replaces the installed
 extension on its next Connect (no prompt after the first approval).
 
 Useful commands: `systemextensionsctl list`,
-`log stream --predicate 'subsystem == "com.claudiosv.pulse-vpn-menu.tunnel"'`.
+`log stream --predicate 'subsystem == "ai.claudio.openconnect.networkextension"'`.
 
 ## How it fits together
 
@@ -111,7 +111,7 @@ The system removes all of it when the tunnel ends — there is no cleanup code.
 - **End of session:** the provider keeps its final status for up to 1.5 s so
   the app can collect the exit code, certificate failure and last log lines,
   then finishes. If the app missed it, it falls back to
-  `fetchLastDisconnectError` (error domain `com.claudiosv.pulse-vpn-menu.tunnel`,
+  `fetchLastDisconnectError` (error domain `ai.claudio.openconnect.networkextension`,
   code = errno).
 - **Version check:** every reply carries `TunnelConstants.protocolVersion`.
 

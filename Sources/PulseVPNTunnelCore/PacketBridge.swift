@@ -32,7 +32,7 @@ public final class PacketBridge: @unchecked Sendable {
     private let localFD: Int32
     private let readPackets: ReadPackets
     private let writePackets: WritePackets
-    private let queue = DispatchQueue(label: "com.claudiosv.pulse-vpn-menu.tunnel.bridge")
+    private let queue = DispatchQueue(label: "ai.claudio.openconnect.networkextension.bridge")
     private var source: DispatchSourceRead?
     private let lock = NSLock()
     private var stopped = false

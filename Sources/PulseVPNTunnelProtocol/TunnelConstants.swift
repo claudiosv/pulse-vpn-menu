@@ -4,12 +4,12 @@ import Foundation
 /// identifiers and wire constants both sides must agree on.
 public enum TunnelConstants {
     public static let teamID = "5HN43G3472"
-    public static let appBundleIdentifier = "com.claudiosv.pulse-vpn-menu"
+    public static let appBundleIdentifier = "ai.claudio.openconnect"
 
     /// The system extension's bundle identifier, and the
     /// `providerBundleIdentifier` of every VPN configuration the app saves.
     /// Must match `TUNNEL_BUNDLE_ID` in build.sh.
-    public static let extensionBundleIdentifier = "com.claudiosv.pulse-vpn-menu.tunnel"
+    public static let extensionBundleIdentifier = "ai.claudio.openconnect.networkextension"
 
     /// Bump whenever `TunnelRequest`, `TunnelReply`, `TunnelConfiguration` or
     /// the start options change incompatibly. Every reply carries it.
@@ -17,12 +17,12 @@ public enum TunnelConstants {
 
     /// Domain of the errors the provider ends a tunnel with. The code is the
     /// positive errno of libopenconnect's result (see `SessionStatus.exitCode`).
-    public static let errorDomain = "com.claudiosv.pulse-vpn-menu.tunnel"
+    public static let errorDomain = "ai.claudio.openconnect.networkextension"
 
     /// Darwin notification the provider posts whenever the `SessionStatus` it
     /// would report has changed (not for counters). It carries no payload:
     /// the app answers by polling.
-    public static let statusChangedNotification = "com.claudiosv.pulse-vpn-menu.tunnel.status-changed"
+    public static let statusChangedNotification = "ai.claudio.openconnect.networkextension.status-changed"
 
     /// `SessionStatus.exitCode` when the tunnel was started without a login
     /// cookie, i.e. from System Settings rather than by the app. The app
