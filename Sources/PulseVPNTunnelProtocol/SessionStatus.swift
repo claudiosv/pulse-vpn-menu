@@ -36,14 +36,20 @@ public struct SessionStatus: Codable, Sendable, Equatable {
 
     public init(
         state: State, exitCode: Int32 = 0, startedAt: Date? = nil,
-        certFailure: CertFailure? = nil, snapshot: SessionSnapshot? = nil
+        certFailure: CertFailure? = nil, snapshot: SessionSnapshot? = nil,
+        awaitingLogin: Bool = false
     ) {
+        self.awaitingLogin = awaitingLogin
         self.state = state
         self.exitCode = exitCode
         self.startedAt = startedAt
         self.certFailure = certFailure
         self.snapshot = snapshot
     }
+
+    /// The provider was started without a login cookie and is waiting for the
+    /// app to deliver one (`TunnelRequest.Operation.login`).
+    public var awaitingLogin: Bool
 
     public var isRunning: Bool { state == .running }
 

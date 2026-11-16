@@ -13,7 +13,7 @@ public enum TunnelConstants {
 
     /// Bump whenever `TunnelRequest`, `TunnelReply`, `TunnelConfiguration` or
     /// the start options change incompatibly. Every reply carries it.
-    public static let protocolVersion = 3
+    public static let protocolVersion = 4
 
     /// Domain of the errors the provider ends a tunnel with. The code is the
     /// positive errno of libopenconnect's result (see `SessionStatus.exitCode`).
@@ -24,9 +24,12 @@ public enum TunnelConstants {
     /// the app answers by polling.
     public static let statusChangedNotification = "ai.claudio.openconnect.networkextension.status-changed"
 
-    /// `SessionStatus.exitCode` when the tunnel was started without a login
-    /// cookie, i.e. from System Settings rather than by the app. The app
-    /// reacts by running its browser login and starting the tunnel itself.
+    /// How long a tunnel started without a login cookie (from System
+    /// Settings) waits for the app to deliver one.
+    public static let loginWait: TimeInterval = 180
+
+    /// `SessionStatus.exitCode` when a tunnel started without a login cookie
+    /// got none within `loginWait`.
     public static let needsLoginExitCode: Int32 = -EAUTH
 
     /// Key in `NETunnelProviderProtocol.providerConfiguration` holding a

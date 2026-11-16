@@ -24,6 +24,7 @@ public final class TunnelSession: @unchecked Sendable {
         var interfaceName: String?
         var dnsServers: [String]?
         var dnsDomains: [String]?
+        var awaitingLogin = false
     }
 
     private let lock = NSLock()
@@ -52,8 +53,23 @@ public final class TunnelSession: @unchecked Sendable {
                     Self.wire($0, interfaceName: core.interfaceName,
                               dnsServers: core.dnsServers, dnsDomains: core.dnsDomains)
                 }
-                : nil
+                : nil,
+            awaitingLogin: core.awaitingLogin
         )
+    }
+
+    /// Whether the session is waiting for the app to deliver a login cookie.
+    public var isAwaitingLogin: Bool { lock.withLock { core.awaitingLogin } }
+
+    /// Marks the session as started without a cookie, so the app can see it
+    /// is wanted (`SessionStatus.awaitingLogin`).
+    public func awaitLogin() {
+        lock.withLock {
+            core.awaitingLogin = true
+            core.startedAt = Date()
+        }
+        log.append("Waiting for Pulse VPN Menu to sign in…\n")
+        onChange?()
     }
 
     /// Starts the session on its own thread and returns at once.

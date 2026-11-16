@@ -31,6 +31,9 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     /// be asked of it). Costs nothing when the app polls promptly.
     private static let finalStatusGrace: TimeInterval = 1.5
 
+    /// Set while a start without a cookie waits for the app to send one.
+    private var pendingConfiguration: TunnelConfiguration?
+
     private var pathMonitor: NWPathMonitor?
     private var lastPathSignature: String?
     private var pendingReconnect: DispatchWorkItem?
@@ -55,19 +58,35 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
         session.onChange = { Self.postStatusChanged() }
         lock.withLock { startCompletion = completionHandler }
 
-        // The login cookie only ever arrives in the start options, so a start
-        // from System Settings (or anything else that isn't the app) has
-        // none. Say so through the status; the app, if it is running, signs
-        // in and starts the tunnel itself.
+        // The login cookie arrives in the start options, so a start from
+        // System Settings (or anything else that isn't the app) has none.
+        // Stay in "Connecting" and say so through the status: the app, if it
+        // is running, signs in and sends the cookie (`.login`). If it never
+        // does, give up after `loginWait`.
         guard let cookie = options?[TunnelConstants.cookieOptionKey] as? String, !cookie.isEmpty else {
-            logger.notice("Started without a login cookie")
-            session.fail(
-                exitCode: TunnelConstants.needsLoginExitCode,
-                message: "Sign-in required: this connection was started outside Pulse VPN Menu.")
-            DispatchQueue.global().async { self.sessionEnded(TunnelConstants.needsLoginExitCode) }
+            logger.notice("Started without a login cookie; waiting for the app")
+            lock.withLock { pendingConfiguration = configuration }
+            session.awaitLogin()
+            DispatchQueue.global().asyncAfter(deadline: .now() + TunnelConstants.loginWait) { [self] in
+                guard lock.withLock({ take(&pendingConfiguration) }) != nil else { return }
+                session.fail(
+                    exitCode: TunnelConstants.needsLoginExitCode,
+                    message: "Sign-in required: Pulse VPN Menu did not sign in. Open it and connect again.")
+                sessionEnded(TunnelConstants.needsLoginExitCode)
+            }
             return
         }
+        beginSession(cookie: cookie, configuration: configuration)
+    }
 
+    /// Sends a cookie to a start that was waiting for one.
+    private func deliverLogin(cookie: String) {
+        guard let configuration = lock.withLock({ take(&pendingConfiguration) }) else { return }
+        session.log.append("Signed in by the app\n")
+        beginSession(cookie: cookie, configuration: configuration)
+    }
+
+    private func beginSession(cookie: String, configuration: TunnelConfiguration) {
         logger.notice("Starting session for profile \(configuration.profileID.uuidString, privacy: .public)")
         session.start(
             url: configuration.vpnURL,
@@ -220,6 +239,17 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
 
     public override func stopTunnel(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
         logger.notice("Stop requested, reason \(reason.rawValue)")
+        // Still waiting for the app's cookie: nothing runs, so just give up.
+        let waiting: (() -> Void)? = lock.withLock {
+            guard take(&pendingConfiguration) != nil else { return nil }
+            let start = take(&startCompletion)
+            return { start?(Self.error(EINTR, "The connection attempt was cancelled.")) }
+        }
+        if let waiting {
+            waiting()
+            completionHandler()
+            return
+        }
         guard session.isRunning else {
             completionHandler()
             return
@@ -242,9 +272,14 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
             completionHandler?(nil)
             return
         }
-        if request.operation == .reconnect {
+        switch request.operation {
+        case .reconnect:
             session.log.append("Reconnect requested\n")
             session.requestReconnect()
+        case .login:
+            if let cookie = request.cookie, !cookie.isEmpty { deliverLogin(cookie: cookie) }
+        case .poll:
+            break
         }
         let status = session.status()
         let (lines, last) = session.log.lines(after: request.afterLog)

@@ -302,6 +302,7 @@ final class OpenConnectController: ObservableObject {
                 }
             } catch {
                 logStore.append("Connect failed: \(error)\n")
+                TunnelClient.shared.cancelWaitingForLogin()
                 return
             }
         }

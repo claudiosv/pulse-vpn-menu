@@ -45,7 +45,8 @@ final class TunnelClient {
     /// Something the user should read in the app's own log.
     var onDiagnostic: ((String) -> Void)?
     /// The connection was started outside the app (System Settings > VPN)
-    /// and so had no login cookie; the app should sign in and connect it.
+    /// and so had no login cookie; the app should sign in and connect it,
+    /// which hands the cookie to the waiting provider (see `start`).
     var onLoginNeeded: ((UUID) -> Void)?
 
     private var managers: [UUID: NETunnelProviderManager] = [:]
@@ -59,6 +60,8 @@ final class TunnelClient {
     /// seeing "disconnected" again means it ended.
     private var activitySeen = false
     private var sawTunnelUp = false
+    /// `onLoginNeeded` has been called for `active`.
+    private var loginRequested = false
     private var logCursor = 0
     private var latest: SessionStatus?
     private var lastPushed: SessionStatus?
@@ -178,6 +181,15 @@ final class TunnelClient {
     /// the system has begun bringing it up. Progress then arrives through
     /// `onStatus`.
     func start(profile: ConnectionProfile, cookie: String) async throws {
+        // A start from System Settings is waiting for exactly this cookie:
+        // hand it over instead of restarting, so the switch doesn't flicker.
+        if let active, active.profileID == profile.id, latest?.awaitingLogin == true,
+           let session = active.manager.connection as? NETunnelProviderSession,
+           session.status == .connecting {
+            appInitiated = true
+            deliver(try await send(TunnelRequest(.login, afterLog: logCursor, cookie: cookie), to: session))
+            return
+        }
         stopFollowing()
         var prepared: Result<NETunnelProviderManager, Error> = .failure(TunnelClientError.noSession)
         await serialized { [self] in
@@ -218,6 +230,12 @@ final class TunnelClient {
             throw TunnelClientError.didNotStart
         }
         startPolling()
+    }
+
+    /// The user gave up signing in: stop a tunnel still waiting for the cookie.
+    func cancelWaitingForLogin() {
+        guard latest?.awaitingLogin == true else { return }
+        stop()
     }
 
     /// Asks the system to stop every tunnel of ours that isn't already down.
@@ -287,6 +305,7 @@ final class TunnelClient {
         self.appInitiated = appInitiated
         activitySeen = false
         sawTunnelUp = false
+        loginRequested = false
         logCursor = 0
         latest = nil
         lastPushed = nil
@@ -378,6 +397,10 @@ final class TunnelClient {
         if reply.status.snapshot?.linkState == .up, reply.status.snapshot?.espEstablished == true {
             sawTunnelUp = true
         }
+        if reply.status.awaitingLogin, !appInitiated, !loginRequested, let profileID = active?.profileID {
+            loginRequested = true
+            onLoginNeeded?(profileID)
+        }
         if reply.status.state == .exited {
             finish(with: reply.status)
         } else {
@@ -387,13 +410,7 @@ final class TunnelClient {
 
     /// The session is over: report it and stop following.
     private func finish(with status: SessionStatus) {
-        let (profileID, initiatedHere) = (active?.profileID, appInitiated)
         stopFollowing()
-        if !initiatedHere, status.exitCode == TunnelConstants.needsLoginExitCode, let profileID {
-            latest = nil
-            onLoginNeeded?(profileID)
-            return
-        }
         push(status)
     }
 

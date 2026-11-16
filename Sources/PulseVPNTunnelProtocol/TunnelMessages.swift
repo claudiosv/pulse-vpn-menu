@@ -8,16 +8,22 @@ public struct TunnelRequest: Codable, Sendable, Equatable {
         case poll
         /// Drop and re-establish the link (~ SIGUSR2), then report as `poll`.
         case reconnect
+        /// Deliver the login cookie to a provider that was started without
+        /// one (`SessionStatus.awaitingLogin`), then report as `poll`.
+        case login
     }
 
     public var operation: Operation
     /// The last log sequence number the app already has; 0 for everything
     /// the provider still holds.
     public var afterLog: Int
+    /// The DSID cookie, for `.login`.
+    public var cookie: String?
 
-    public init(_ operation: Operation, afterLog: Int = 0) {
+    public init(_ operation: Operation, afterLog: Int = 0, cookie: String? = nil) {
         self.operation = operation
         self.afterLog = afterLog
+        self.cookie = cookie
     }
 
     public func encoded() -> Data? { try? JSONEncoder().encode(self) }
