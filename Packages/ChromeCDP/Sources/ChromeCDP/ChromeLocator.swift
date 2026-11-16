@@ -2,15 +2,15 @@ import Foundation
 
 /// Locates a Chrome/Chromium executable to drive via CDP, mirroring
 /// nodriver's `find_chrome_executable()` (`nodriver/core/config.py`).
-enum ChromeLocator {
-    enum ChromeLocatorError: Error, CustomStringConvertible {
+public enum ChromeLocator {
+    public enum ChromeLocatorError: Error, CustomStringConvertible {
         case notFound
-        var description: String {
+        public var description: String {
             "Could not find a Chrome or Chromium browser. Please install Google Chrome or Chromium."
         }
     }
 
-    static func locate() throws -> URL {
+    public static func locate() throws -> URL {
         let fixedCandidates = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",

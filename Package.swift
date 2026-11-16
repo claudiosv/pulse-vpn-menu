@@ -9,6 +9,10 @@ let package = Package(
     platforms: [
         .macOS(.v27)
     ],
+    dependencies: [
+        // Drives Chrome for the browser login.
+        .package(path: "Packages/ChromeCDP")
+    ],
     targets: [
         .target(
             name: "PulseVPNTunnelProtocol",
@@ -16,7 +20,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "PulseVPNMenu",
-            dependencies: ["PulseVPNTunnelProtocol"],
+            dependencies: [
+                "PulseVPNTunnelProtocol",
+                .product(name: "ChromeCDP", package: "ChromeCDP"),
+            ],
             path: "Sources/PulseVPNMenu",
             linkerSettings: [
                 .linkedFramework("NetworkExtension"),

@@ -4,14 +4,14 @@ import Foundation
 /// assigned port, mirroring nodriver's `free_port()`
 /// (`nodriver/core/util.py`). Same tolerated race condition as upstream:
 /// the socket is closed before Chrome binds the same port.
-enum FreePort {
-    enum FreePortError: Error {
+public enum FreePort {
+    public enum FreePortError: Error {
         case socketCreationFailed
         case bindFailed
         case getsocknameFailed
     }
 
-    static func pick() throws -> UInt16 {
+    public static func pick() throws -> UInt16 {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw FreePortError.socketCreationFailed }
         defer { close(fd) }

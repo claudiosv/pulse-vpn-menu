@@ -3,17 +3,17 @@ import Foundation
 /// Launches Chrome with remote debugging enabled and waits for its DevTools
 /// HTTP endpoint to come up, mirroring `nodriver.Browser.start()`
 /// (`nodriver/core/browser.py`).
-enum ChromeProcessLauncher {
-    struct LaunchResult {
-        let process: Process
-        let webSocketDebuggerURL: URL
+public enum ChromeProcessLauncher {
+    public struct LaunchResult {
+        public let process: Process
+        public let webSocketDebuggerURL: URL
     }
 
-    enum LaunchError: Error, CustomStringConvertible {
+    public enum LaunchError: Error, CustomStringConvertible {
         case devToolsNotResponding
         case invalidVersionResponse
 
-        var description: String {
+        public var description: String {
             switch self {
             case .devToolsNotResponding: return "Chrome's DevTools endpoint never responded."
             case .invalidVersionResponse: return "Chrome's /json/version response was not understood."
@@ -25,7 +25,7 @@ enum ChromeProcessLauncher {
         let webSocketDebuggerUrl: String
     }
 
-    static func launch(profileDir: URL) async throws -> LaunchResult {
+    public static func launch(profileDir: URL) async throws -> LaunchResult {
         try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
 
         let chromePath = try ChromeLocator.locate()
