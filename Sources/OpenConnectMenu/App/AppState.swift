@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 /// Top-level coordinator: owns the persistence/VPN singletons and the
@@ -41,6 +42,7 @@ final class AppState: ObservableObject {
     private static let statusRefreshInterval: TimeInterval = 5
 
     private var refreshTimer: Timer?
+    private var controllerObserver: AnyCancellable?
 
     init() {
         let connectionStore = ConnectionStore()
@@ -74,6 +76,13 @@ final class AppState: ObservableObject {
                 Task { await TunnelClient.shared.sync(profiles: profiles, createMissing: true) }
             }
             Task { await TunnelClient.shared.sync(profiles: connectionStore.profiles, createMissing: nil) }
+        }
+
+        // The controller announces every change (busy, connected profile, ...)
+        // just before it happens; look again right after, rather than leave
+        // the menu showing the old state until the next timer tick.
+        controllerObserver = controller.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.refresh() }
         }
 
         refresh()
