@@ -37,11 +37,20 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
+    /// Keep the login browser's session cookies between connections, so
+    /// single sign-on pages that use them don't ask again. Defaults to
+    /// `false`: Chrome then also reopens its last tabs and is closed more
+    /// slowly after login.
+    @Published var keepBrowserSession: Bool {
+        didSet { save() }
+    }
+
     private struct Document: Codable {
         var statsPollInterval: TimeInterval
         var disconnectOnQuit: Bool
         var notifyOnUnexpectedDisconnect: Bool?
         var notifyOnTransientDrops: Bool?
+        var keepBrowserSession: Bool?
     }
 
     init() {
@@ -51,11 +60,13 @@ final class AppSettings: ObservableObject {
             disconnectOnQuit = document.disconnectOnQuit
             notifyOnUnexpectedDisconnect = document.notifyOnUnexpectedDisconnect ?? true
             notifyOnTransientDrops = document.notifyOnTransientDrops ?? false
+            keepBrowserSession = document.keepBrowserSession ?? false
         } else {
             statsPollInterval = Self.defaultStatsPollInterval
             disconnectOnQuit = false
             notifyOnUnexpectedDisconnect = true
             notifyOnTransientDrops = false
+            keepBrowserSession = false
         }
     }
 
@@ -64,7 +75,8 @@ final class AppSettings: ObservableObject {
             statsPollInterval: statsPollInterval,
             disconnectOnQuit: disconnectOnQuit,
             notifyOnUnexpectedDisconnect: notifyOnUnexpectedDisconnect,
-            notifyOnTransientDrops: notifyOnTransientDrops
+            notifyOnTransientDrops: notifyOnTransientDrops,
+            keepBrowserSession: keepBrowserSession
         )
         guard let data = try? JSONEncoder.pretty.encode(document) else { return }
         try? data.write(to: AppPaths.appSettingsFile, options: .atomic)

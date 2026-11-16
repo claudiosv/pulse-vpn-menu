@@ -360,7 +360,8 @@ final class OpenConnectController: ObservableObject {
     func connectOnce(profile: ConnectionProfile) async throws -> ConnectAttemptResult {
         var dsid = profile.lastDSID
         if dsid == nil || dsid?.isEmpty == true {
-            dsid = try await authenticator.fetchDSID(vpnURL: profile.vpnURL)
+            dsid = try await authenticator.fetchDSID(
+                vpnURL: profile.vpnURL, keepBrowserSession: appSettings.keepBrowserSession)
         }
         guard let dsidValue = dsid, !dsidValue.isEmpty else {
             throw ConnectError.noCookie

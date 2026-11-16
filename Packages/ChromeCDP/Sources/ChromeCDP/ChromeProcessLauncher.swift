@@ -7,6 +7,21 @@ public enum ChromeProcessLauncher {
     public struct LaunchResult {
         public let process: Process
         public let webSocketDebuggerURL: URL
+
+        /// Closes the DevTools connection and ends Chrome. With `gracefully`,
+        /// Chrome is first asked to quit (`Browser.close`) and given a few
+        /// seconds to save its state, such as session cookies, before being
+        /// terminated.
+        public func shutDown(client: CDPClient, gracefully: Bool) async {
+            if gracefully, process.isRunning {
+                _ = try? await client.send(method: "Browser.close")
+                for _ in 0..<40 where process.isRunning {
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+            }
+            if process.isRunning { process.terminate() }
+            await client.close()
+        }
     }
 
     public enum LaunchError: Error, CustomStringConvertible {
@@ -33,7 +48,18 @@ public enum ChromeProcessLauncher {
     ///     `NativeMessagingHosts` folder, so each manifest is linked in from
     ///     the default Chrome profile; without it an extension such as
     ///     1Password can't reach its desktop app.
-    public static func launch(profileDir: URL, nativeMessagingHosts: [String] = []) async throws -> LaunchResult {
+    ///   - keepSessionCookies: keep session cookies (those with no expiry,
+    ///     which many single sign-on pages use) between runs. Chrome drops
+    ///     them on quit unless it is started with `--restore-last-session`,
+    ///     which also reopens the last tabs (`ChromeCookieFetcher` closes
+    ///     them again). Chrome must then be closed with
+    ///     `LaunchResult.shutDown(gracefully:)`, not killed, so it can save
+    ///     them. Editing the profile's `Preferences` instead does not work:
+    ///     Chrome protects the startup setting with a hash and discards the
+    ///     change.
+    public static func launch(
+        profileDir: URL, nativeMessagingHosts: [String] = [], keepSessionCookies: Bool = false
+    ) async throws -> LaunchResult {
         try FileManager.default.createDirectory(at: profileDir, withIntermediateDirectories: true)
         linkNativeMessagingHosts(nativeMessagingHosts, into: profileDir)
 
@@ -61,6 +87,9 @@ public enum ChromeProcessLauncher {
             "--remote-debugging-port=\(port)",
             "--window-size=800,900",
         ]
+        if keepSessionCookies {
+            process.arguments?.append("--restore-last-session")
+        }
         // Detach Chrome's own output; we only care about the CDP endpoint.
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

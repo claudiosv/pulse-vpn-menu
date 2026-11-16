@@ -42,6 +42,18 @@ struct GeneralView: View {
 
                 GlassCard {
                     VStack(alignment: .leading, spacing: 8) {
+                        Toggle(isOn: $appSettings.keepBrowserSession) {
+                            Text("Keep the browser login between connections")
+                                .font(.system(size: 13.5))
+                        }
+                        .toggleStyle(.switch)
+                        Text("Keeps the sign-in cookies that expire when the browser closes (many single sign-on pages use them), so they don't ask again. Off by default: the login window then reopens the last tabs and takes a moment longer to close.")
+                            .cardFootnote()
+                    }
+                }
+
+                GlassCard {
+                    VStack(alignment: .leading, spacing: 8) {
                         Toggle(isOn: $appSettings.notifyOnUnexpectedDisconnect) {
                             Text("Notify when the VPN disconnects unexpectedly")
                                 .font(.system(size: 13.5))

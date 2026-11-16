@@ -23,6 +23,10 @@ public enum ChromeCookieFetcher {
     ///   - profileDir: Chrome's user-data directory, kept between runs so the
     ///     browser remembers the user.
     ///   - nativeMessagingHosts: see `ChromeProcessLauncher.launch`.
+    ///   - keepSession: keep session cookies (those without an expiry, which
+    ///     many single sign-on pages use) between runs; see
+    ///     `ChromeProcessLauncher.launch`. Chrome is then closed
+    ///     cleanly rather than killed, so it can save them.
     ///   - pollInterval: how often to look for the cookie.
     /// - Throws: `FetchError.cancelled` if the user closes Chrome first.
     public static func fetch(
@@ -30,17 +34,29 @@ public enum ChromeCookieFetcher {
         at url: String,
         profileDir: URL,
         nativeMessagingHosts: [String] = [],
+        keepSession: Bool = false,
         pollInterval: Duration = .seconds(1)
     ) async throws -> String {
         let launch = try await ChromeProcessLauncher.launch(
-            profileDir: profileDir, nativeMessagingHosts: nativeMessagingHosts)
+            profileDir: profileDir, nativeMessagingHosts: nativeMessagingHosts, keepSessionCookies: keepSession)
         let client = CDPClient()
 
-        defer {
-            launch.process.terminate()
-            Task { await client.close() }
+        let result: Result<String, Error>
+        do {
+            result = .success(try await run(
+                client: client, launch: launch, cookieNamed: name, at: url,
+                closeOtherTabs: keepSession, pollInterval: pollInterval))
+        } catch {
+            result = .failure(error)
         }
+        await launch.shutDown(client: client, gracefully: keepSession)
+        return try result.get()
+    }
 
+    private static func run(
+        client: CDPClient, launch: ChromeProcessLauncher.LaunchResult,
+        cookieNamed name: String, at url: String, closeOtherTabs: Bool, pollInterval: Duration
+    ) async throws -> String {
         await client.connect(to: launch.webSocketDebuggerURL)
 
         let targetsResult = try await client.send(method: "Target.getTargets").dictionary
@@ -62,12 +78,24 @@ public enum ChromeCookieFetcher {
             if !launch.process.isRunning {
                 throw FetchError.cancelled
             }
+            if closeOtherTabs {
+                // With "continue where you left off" Chrome reopens the last
+                // run's tabs, some a moment after startup.
+                await closeTabs(except: pageTarget.targetId, client: client)
+            }
             let cookiesResult = try await client.send(
                 method: "Storage.getCookies", params: [:], sessionId: sessionId).dictionary
             if let cookie = CDPModels.cookies(from: cookiesResult).first(where: { $0.name == name }) {
                 return cookie.value
             }
             try await Task.sleep(for: pollInterval)
+        }
+    }
+
+    private static func closeTabs(except keep: String, client: CDPClient) async {
+        guard let result = try? await client.send(method: "Target.getTargets").dictionary else { return }
+        for target in CDPModels.targets(from: result) where target.type == "page" && target.targetId != keep {
+            _ = try? await client.send(method: "Target.closeTarget", params: ["targetId": target.targetId])
         }
     }
 }
