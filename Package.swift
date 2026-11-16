@@ -58,7 +58,8 @@ let package = Package(
             dependencies: ["OpenConnectTunnelProtocol", "OpenConnectKit"],
             path: "Sources/OpenConnectTunnelCore",
             linkerSettings: [
-                .linkedFramework("NetworkExtension")
+                .linkedFramework("NetworkExtension"),
+                .linkedFramework("SystemConfiguration"),
             ]
         ),
         .executableTarget(

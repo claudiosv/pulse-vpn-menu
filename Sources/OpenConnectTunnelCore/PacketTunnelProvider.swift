@@ -35,6 +35,7 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     private var pendingConfiguration: TunnelConfiguration?
 
     private var pathMonitor: NWPathMonitor?
+    private var addressWatcher: NetworkAddressWatcher?
     private var lastPathSignature: String?
     private var pendingReconnect: DispatchWorkItem?
 
@@ -111,22 +112,24 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     /// for a reconnect when the usable path changes, e.g. a Wi-Fi switch.
     private func startPathMonitor() {
         let monitor = NWPathMonitor(prohibitedInterfaceTypes: [.other])
-        monitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            let signature = Self.signature(of: path)
-            let previous = lock.withLock { () -> String? in
-                defer { lastPathSignature = signature }
-                return lastPathSignature
-            }
-            // The first update is the baseline; coming back from "no network"
-            // or moving to another interface or gateway is a change.
-            guard let previous, previous != signature, path.status == .satisfied else { return }
-            scheduleReconnect(because: "the network changed")
-        }
+        monitor.pathUpdateHandler = { [weak self] path in self?.evaluate(path) }
         monitor.start(queue: .global(qos: .utility))
+
+        // `NWPath` doesn't carry the local address, so a new address on the
+        // same interface and gateway (a DHCP renewal) is caught through the
+        // system configuration store instead.
+        let watcher = NetworkAddressWatcher { [weak self] in
+            guard let self, let path = lock.withLock({ pathMonitor?.currentPath }) else { return }
+            evaluate(path)
+        }
+        if watcher == nil {
+            session.log.append("Address changes on the same network won't be noticed (system configuration store unavailable)\n")
+        }
         lock.withLock {
             pathMonitor?.cancel()
+            addressWatcher?.stop()
             pathMonitor = monitor
+            addressWatcher = watcher
             lastPathSignature = nil
         }
     }
@@ -135,15 +138,32 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
         lock.withLock {
             pathMonitor?.cancel()
             pathMonitor = nil
+            addressWatcher?.stop()
+            addressWatcher = nil
             pendingReconnect?.cancel()
             pendingReconnect = nil
         }
     }
 
+    /// Compares the network now with the last one seen and schedules a
+    /// reconnect if it changed to something usable.
+    private func evaluate(_ path: NWPath) {
+        let signature = Self.signature(of: path)
+        let previous = lock.withLock { () -> String? in
+            defer { lastPathSignature = signature }
+            return lastPathSignature
+        }
+        // The first evaluation is the baseline; coming back from "no
+        // network", or moving to another interface, gateway or address, is
+        // a change.
+        guard let previous, previous != signature, path.status == .satisfied else { return }
+        scheduleReconnect(because: "the network changed")
+    }
+
     private static func signature(of path: NWPath) -> String {
         let interfaces = path.availableInterfaces.map(\.name).joined(separator: ",")
         let gateways = path.gateways.map { "\($0)" }.joined(separator: ",")
-        return "\(path.status)|\(interfaces)|\(gateways)"
+        return "\(path.status)|\(interfaces)|\(gateways)|\(NetworkAddresses.snapshot())"
     }
 
     private func scheduleReconnect(because reason: String) {
