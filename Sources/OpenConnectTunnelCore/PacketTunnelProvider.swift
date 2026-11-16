@@ -37,6 +37,9 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
     private var pathMonitor: NWPathMonitor?
     private var addressWatcher: NetworkAddressWatcher?
     private var lastPathSignature: String?
+    /// Network changes before this time are the tunnel's own setup.
+    private var settleUntil: Date?
+    private static let settleTime: TimeInterval = 5
     private var pendingReconnect: DispatchWorkItem?
 
     /// Network changes tend to arrive in bursts; reconnect once things settle.
@@ -151,13 +154,17 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
         let signature = Self.signature(of: path)
         let previous = lock.withLock { () -> String? in
             defer { lastPathSignature = signature }
+            // Applying the tunnel's own routes and DNS changes what the system
+            // reports; that is not the user's network changing, so whatever
+            // is seen just after setup becomes the new baseline.
+            if let settleUntil, Date() < settleUntil { return nil }
             return lastPathSignature
         }
         // The first evaluation is the baseline; coming back from "no
         // network", or moving to another interface, gateway or address, is
         // a change.
         guard let previous, previous != signature, path.status == .satisfied else { return }
-        scheduleReconnect(because: "the network changed")
+        scheduleReconnect(because: "the network changed (\(previous) -> \(signature))")
     }
 
     private static func signature(of path: NWPath) -> String {
@@ -210,6 +217,8 @@ public final class PacketTunnelProvider: NEPacketTunnelProvider, @unchecked Send
             session.log.append("The system rejected the tunnel network settings: \(error.localizedDescription)\n")
             return -EIO
         }
+
+        lock.withLock { settleUntil = Date().addingTimeInterval(Self.settleTime) }
 
         do {
             nonisolated(unsafe) let flow = packetFlow
