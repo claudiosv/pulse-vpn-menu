@@ -105,7 +105,7 @@ struct ConnectionEditView: View {
     @State private var debug: Bool
 
     private let profileID: UUID
-    private let existingDSID: String?
+    @State private var savedLogin: String?
     @State private var pinnedCertHash: String?
     private let onSave: (ConnectionProfile) -> Void
     /// Captured once from the profile this sheet was opened with, so the
@@ -120,7 +120,7 @@ struct ConnectionEditView: View {
     /// stale/blank fields on the second and later edits.
     init(profile: ConnectionProfile, onSave: @escaping (ConnectionProfile) -> Void) {
         self.profileID = profile.id
-        self.existingDSID = profile.lastDSID
+        self._savedLogin = State(initialValue: profile.lastDSID)
         self._pinnedCertHash = State(initialValue: profile.pinnedCertHash)
         self.isNew = profile.name.isEmpty
         self._name = State(initialValue: profile.name)
@@ -204,6 +204,15 @@ struct ConnectionEditView: View {
                     TextField("Post-connect command", text: $post, prompt: Text("none"))
                     Toggle("Use the server's routes instead of sending all traffic", isOn: $noDefaultRoute)
                     Toggle("Verbose logging", isOn: $debug)
+                    if let login = savedLogin, !login.isEmpty {
+                        LabeledContent("Saved login") {
+                            HStack {
+                                Text("reused on the next connect")
+                                    .foregroundStyle(.secondary)
+                                Button("Clear") { savedLogin = nil }
+                            }
+                        }
+                    }
                     if let pinnedCertHash {
                         LabeledContent("Trusted certificate") {
                             HStack {
@@ -239,7 +248,7 @@ struct ConnectionEditView: View {
                             post: post.isEmpty ? nil : post,
                             noDefaultRoute: noDefaultRoute,
                             debug: debug,
-                            lastDSID: existingDSID,
+                            lastDSID: savedLogin,
                             pinnedCertHash: pinnedCertHash
                         )
                     )
