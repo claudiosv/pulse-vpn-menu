@@ -66,8 +66,29 @@ detected.
 
 Network Extension supports on-demand rules, e.g. connect when a name under
 `ucdavis.edu` is looked up, or whenever the Mac is not on a given Wi-Fi
-network. It fits split tunneling well. It needs item 2 first, because an
-on-demand start has no cookie either.
+network. It fits split tunneling well. It needed item 2 first, because an
+on-demand start has no cookie either; that is now in place.
+
+It must be configurable per connection, as a list of domains that trigger a
+connect. The first use is `*.cs.ucdavis.edu`: looking up any name under it
+brings the VPN up. Details:
+
+- Setting: an optional list of on-demand domains on `ConnectionProfile` (and
+  `TunnelConfiguration`), edited in the connection editor like the DNS
+  domains, accepting the same wildcard form (`*.example.edu`). Empty means
+  on demand is off for that connection.
+- Rules: one `NEEvaluateConnectionRule` with `matchDomains` and the action
+  `.connectIfNeeded`, wrapped in an `NEOnDemandRuleEvaluateConnection`, then
+  a final `NEOnDemandRuleDisconnect` (or `Ignore`) for everything else. Set
+  `manager.isOnDemandEnabled` only when the list is non-empty.
+  `matchDomains` matches a domain and everything under it, so strip the
+  leading `*.`.
+- Interaction with disconnect: a user-requested disconnect must not be
+  undone by the next lookup. Either turn on demand off until the user
+  connects again, or accept the system's own behavior and say so in the UI.
+- An on-demand start has no cookie, so it relies on item 2: the app has to be
+  running to sign in, and the 180 s wait applies. Decide what happens when
+  the app isn't running (launch it, or post a notification).
 
 Where: `NETunnelProviderManager.onDemandRules` in `TunnelClient.ensureManager`,
 plus per-connection settings and UI.
