@@ -80,8 +80,11 @@ struct ConnectionProfile: Codable, Identifiable, Equatable {
     }
 
     /// A DNS domain name: dot-separated labels of letters, digits and
-    /// hyphens, at least two of them, not an IP address.
+    /// hyphens, at least two of them, not an IP address. A leading `*.` is
+    /// allowed: `*.example.edu` means the same as `example.edu`, since a
+    /// domain always covers its subdomains (see `TunnelPlan`).
     static func isValidDomain(_ text: String) -> Bool {
+        let text = text.hasPrefix("*.") ? String(text.dropFirst(2)) : text
         guard text.count <= 253, !isValidAddress(text) else { return false }
         let labels = text.split(separator: ".", omittingEmptySubsequences: false)
         guard labels.count >= 2 else { return false }

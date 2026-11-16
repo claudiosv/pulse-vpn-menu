@@ -127,8 +127,8 @@ public struct TunnelPlan: Equatable, Sendable {
         guard ipv4 != nil || ipv6 != nil else { throw PlanError.noUsableAddress }
 
         var matchDomains: [String]?
-        if let domains = options?.domains, !domains.isEmpty {
-            matchDomains = domains
+        if let domains = options?.domains.compactMap(matchDomain), !domains.isEmpty {
+            matchDomains = unique(domains)
         } else if !fullTunnel {
             let domains = server.splitDNS.isEmpty ? server.domains : server.splitDNS
             matchDomains = domains.isEmpty ? nil : domains
@@ -196,6 +196,18 @@ public struct TunnelPlan: Equatable, Sendable {
                 destinationAddress: route.address,
                 networkPrefixLength: NSNumber(value: route.prefixLength)
             )
+    }
+
+    /// A domain as the system wants it for matching. The system matches by
+    /// suffix — `example.edu` covers `example.edu` and everything under it —
+    /// so the wildcard spellings `*.example.edu` and `.example.edu` are the
+    /// same thing with the prefix removed. Nil if nothing is left.
+    static func matchDomain(_ text: String) -> String? {
+        var domain = text.trimmingCharacters(in: .whitespaces).lowercased()
+        if domain.hasPrefix("*") { domain.removeFirst() }
+        while domain.hasPrefix(".") { domain.removeFirst() }
+        while domain.hasSuffix(".") { domain.removeLast() }
+        return domain.isEmpty || domain.contains("*") ? nil : domain
     }
 
     // MARK: - Parsing (server-provided text: anything malformed is dropped)

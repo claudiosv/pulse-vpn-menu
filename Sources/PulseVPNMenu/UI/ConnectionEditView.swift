@@ -135,7 +135,7 @@ struct ConnectionEditView: View {
         self._dnsDomains = State(initialValue: EditableList(
             items: profile.dnsDomainList,
             isValid: ConnectionProfile.isValidDomain,
-            invalidMessage: "Enter a domain name, e.g. example.edu."))
+            invalidMessage: "Enter a domain name, e.g. example.edu or *.example.edu."))
         self._post = State(initialValue: profile.post ?? "")
         self._noDefaultRoute = State(initialValue: profile.noDefaultRoute)
         self._debug = State(initialValue: profile.debug)
@@ -181,10 +181,10 @@ struct ConnectionEditView: View {
                 )
                 ListSection(
                     title: "DNS Domains",
-                    prompt: "example.edu",
+                    prompt: "example.edu or *.example.edu",
                     footer: dnsDomains.items.isEmpty
                         ? "No domains: the VPN's DNS answers everything when all traffic goes through it, otherwise only the domains the server names."
-                        : "Only names in these domains are looked up through the VPN's DNS.",
+                        : "Only names in these domains, and their subdomains, are looked up through the VPN's DNS.",
                     list: $dnsDomains
                 )
                 Section("Advanced") {

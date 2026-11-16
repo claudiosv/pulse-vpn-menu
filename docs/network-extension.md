@@ -97,7 +97,8 @@ Decided in `TunnelPlan.make`, per connection:
 
 A connection can override both: **DNS Servers** replaces the server's
 resolvers, and **DNS Domains** sets exactly which domains they answer for
-(in a full tunnel too). The Status tab shows the servers in use.
+(in a full tunnel too). A domain covers its subdomains, so `*.example.edu` is
+accepted and means the same as `example.edu`. The Status tab shows the servers in use.
 
 The system removes all of it when the tunnel ends — there is no cleanup code.
 

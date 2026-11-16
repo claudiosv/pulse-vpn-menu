@@ -108,6 +108,15 @@ import Testing
             fallbackRemoteAddress: "vpn.example.edu") == plan(server))
     }
 
+    @Test func wildcardDomainsAreTheSameAsTheDomainItself() throws {
+        let plan = try TunnelPlan.make(
+            server: server, routing: RoutingOptions(),
+            dns: DNSOptions(domains: ["*.UCDavis.edu", "ucdavis.edu", ".example.org.", "*", "a.*.b"]),
+            fallbackRemoteAddress: "vpn.example.edu")
+        #expect(plan.matchDomains == ["ucdavis.edu", "example.org"])
+        #expect(plan.networkSettings().dnsSettings?.matchDomains == ["ucdavis.edu", "example.org"])
+    }
+
     @Test func splitTunnelDNSWithNoDomainsIsNotInUse() throws {
         var server = server
         server.domains = []
