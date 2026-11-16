@@ -62,7 +62,7 @@ schedule a reconnect after 2 s. The monitor compares status, interfaces and
 gateways; a change of IP address on the same interface and gateway is not
 detected.
 
-### 4. Connect on demand
+### 4. Connect on demand (Done)
 
 Network Extension supports on-demand rules, e.g. connect when a name under
 `ucdavis.edu` is looked up, or whenever the Mac is not on a given Wi-Fi
@@ -93,9 +93,20 @@ brings the VPN up. Details:
 Where: `NETunnelProviderManager.onDemandRules` in `TunnelClient.ensureManager`,
 plus per-connection settings and UI.
 
+Done: `ConnectionProfile.onDemandDomains` (editor section "Connect on
+Demand", same list format and wildcard handling as the DNS domains) is carried
+in `TunnelConfiguration.onDemandDomains`. `TunnelClient.applyOnDemand` installs
+one `NEEvaluateConnectionRule(matchDomains:andAction: .connectIfNeeded)` plus a
+final ignore rule. A user disconnect turns the rules off
+(`TunnelClient.suspendOnDemand`) until the next connect or app launch.
+Limits: `.connectIfNeeded` fires only when the name can't be resolved without
+the VPN, so a name that also resolves publicly won't trigger it (there is no
+"always connect for this domain" action); and the app has to be running to
+sign in, otherwise the start gives up after the 180 s wait.
+
 ## Correctness and robustness
 
-### 5. Read ESP state directly
+### 5. Read ESP state directly (Partly done)
 
 "ESP session established" and link drops are detected by matching
 libopenconnect's log text (`note_progress` in `ocshim.c`). If upstream
@@ -103,14 +114,26 @@ rewords a line, ESP gating and drop notifications silently stop working.
 Reading `vpninfo->dtls_state` through `openconnect-internal.h` is sturdier,
 at the cost of tying the shim to the pinned libopenconnect version.
 
-### 6. Don't require ESP to call the tunnel connected
+Partly done: not the internal-header route, which needs the per-arch
+`config.h` from the build cache and so couples the shim tightly to the build.
+Instead `LogMarkerTests` fails if any text the shim matches (`drop_markers`
+and "ESP session established") is no longer in `third_party/openconnect`.
+That test found a marker the pinned version never logs
+(`server closed connection`); the shim now matches `read error on` and
+`ssl connection failure` instead.
+
+### 6. Don't require ESP to call the tunnel connected (Done)
 
 Connect waits up to 30 s for ESP (`OpenConnectController.isTunnelUp`). If UDP
 4500 is blocked, the session falls back to TLS and works, but the app reports
 `tunnelTimeout`. Treat "tunnel up, ESP not established after the server's
 fallback interval" as connected, and show which transport is in use.
 
-### 7. Trust CAs from the keychain
+Done: connect waits `OpenConnectController.espGrace` (12 s) for ESP, then
+accepts a link that is up over TLS and logs it. The Status tab shows
+"ESP (UDP)" or "TLS (TCP)".
+
+### 7. Trust CAs from the keychain (Done)
 
 Certificate validation uses `/etc/ssl/cert.pem` only, so a gateway whose
 certificate chains to a corporate root in the keychain always hits the pin
@@ -119,20 +142,33 @@ prompt. When OpenSSL's validation fails, evaluate the peer chain with
 
 Where: `validate_peer_cert` in `ocshim.c`, with a new callback into Swift.
 
-### 8. Session expiry warning
+Done: the shim's new `trust_chain` callback hands the chain to
+`SystemTrust.trusts(chain:host:)` (`SecTrust` with the SSL policy for the
+server's name) before the pin prompt. Not tried against a real corporate root.
+
+### 8. Session expiry warning (Done)
 
 libopenconnect reports when the login expires
 (`openconnect_get_auth_expiration`); it is logged once and never shown. Carry
 it in `SessionSnapshot`, show it on the Status tab, and post a notification
 shortly before it runs out.
 
+Done: the expiry travels in `SessionSnapshot.expiresAt`, shows as "LOGIN
+expires …" on the Status tab (orange within an hour), and a notification is
+scheduled 10 minutes before (gated by the "unexpected disconnect"
+notification setting).
+
 ## Cleanup
 
-### 9. Remove the old helper daemon automatically
+### 9. Remove the old helper daemon automatically (Done)
 
 The retired root helper (`com.claudiosv.pulse-vpn-menu.helper`) stays
 registered until switched off by hand in Login Items. On first launch the app
 could call `SMAppService.daemon(plistName:).unregister()` once.
+
+Done: `LegacyHelperCleanup` runs once at launch. The helper's launchd plist is
+bundled again (`Resources/LegacyHelper`, copied by `build.sh`) because
+`SMAppService` needs it to find the service.
 
 ### 10. Rename the internals
 
@@ -140,11 +176,13 @@ The bundle identifiers are `ai.claudio.openconnect[.networkextension]`, but
 targets, source paths, the app name and the notary keychain profile still say
 `PulseVPN…` / `pulse-vpn-menu`. Pick one name.
 
-### 11. Tests for the app target
+### 11. Tests for the app target (Done)
 
 The tunnel side has unit tests; the app has none. Worth covering first:
 `ConnectionProfile` decoding (including the `vpn-slice` migration),
 `isValidRoute`, `isValidAddress`, `isValidDomain`.
+
+Done: `Tests/PulseVPNMenuTests`.
 
 ### 12. Universal build
 
