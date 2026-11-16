@@ -19,6 +19,26 @@
             "target": "PulseVPNMenu",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release PulseVPNMenu"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:pulse-vpn-menu}",
+            "name": "Debug PulseVPNMenuHelper",
+            "target": "PulseVPNMenuHelper",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PulseVPNMenuHelper"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:pulse-vpn-menu}",
+            "name": "Release PulseVPNMenuHelper",
+            "target": "PulseVPNMenuHelper",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PulseVPNMenuHelper"
         }
     ]
 }
