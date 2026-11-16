@@ -193,6 +193,20 @@ final class TunnelClient {
         }
     }
 
+    /// The app is quitting: turn connect on demand off for every connection,
+    /// so the system doesn't start a tunnel that has no app to sign it in.
+    /// It comes back at the next launch, when the saved configurations are
+    /// brought in line with the profiles again (`sync`).
+    func suspendAllOnDemand() async {
+        await serialized { [self] in
+            for (id, manager) in managers where manager.isOnDemandEnabled {
+                onDemandSuspended.insert(id)
+                manager.isOnDemandEnabled = false
+                try? await Self.save(manager)
+            }
+        }
+    }
+
     private static func configuration(of manager: NETunnelProviderManager) -> TunnelConfiguration? {
         TunnelConfiguration(
             providerConfiguration: (manager.protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration)

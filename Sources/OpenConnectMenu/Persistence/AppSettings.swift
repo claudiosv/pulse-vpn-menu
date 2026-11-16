@@ -12,11 +12,13 @@ final class AppSettings: ObservableObject {
         didSet { save() }
     }
 
-    /// Whether Quit should stop the VPN session and clean up routes
-    /// before the app exits. Defaults to `false` — quitting the menu bar
-    /// app has never touched an active tunnel, and changing that default
-    /// would silently drop a working VPN connection for anyone who quits
-    /// the app without thinking about it.
+    /// Whether Quit stops the VPN (and with it the network extension's
+    /// session) before the app exits. Defaults to `true`: once the app is
+    /// gone nothing can sign a dropped tunnel back in or show its state.
+    /// Stored as `stopOnQuit`; an older `disconnectOnQuit` value, whose
+    /// default was off, is ignored on purpose. Quitting by `kill -TERM`
+    /// (how a rebuilt app is relaunched) bypasses this, so a relaunch keeps
+    /// the tunnel.
     @Published var disconnectOnQuit: Bool {
         didSet { save() }
     }
@@ -47,7 +49,10 @@ final class AppSettings: ObservableObject {
 
     private struct Document: Codable {
         var statsPollInterval: TimeInterval
-        var disconnectOnQuit: Bool
+        /// Replaced by `stopOnQuit`, whose default is on; kept so older files
+        /// still decode, and otherwise ignored.
+        var disconnectOnQuit: Bool?
+        var stopOnQuit: Bool?
         var notifyOnUnexpectedDisconnect: Bool?
         var notifyOnTransientDrops: Bool?
         var keepBrowserSession: Bool?
@@ -57,13 +62,13 @@ final class AppSettings: ObservableObject {
         if let data = try? Data(contentsOf: AppPaths.appSettingsFile),
            let document = try? JSONDecoder().decode(Document.self, from: data) {
             statsPollInterval = document.statsPollInterval
-            disconnectOnQuit = document.disconnectOnQuit
+            disconnectOnQuit = document.stopOnQuit ?? true
             notifyOnUnexpectedDisconnect = document.notifyOnUnexpectedDisconnect ?? true
             notifyOnTransientDrops = document.notifyOnTransientDrops ?? false
             keepBrowserSession = document.keepBrowserSession ?? false
         } else {
             statsPollInterval = Self.defaultStatsPollInterval
-            disconnectOnQuit = false
+            disconnectOnQuit = true
             notifyOnUnexpectedDisconnect = true
             notifyOnTransientDrops = false
             keepBrowserSession = false
@@ -73,7 +78,8 @@ final class AppSettings: ObservableObject {
     private func save() {
         let document = Document(
             statsPollInterval: statsPollInterval,
-            disconnectOnQuit: disconnectOnQuit,
+            disconnectOnQuit: nil,
+            stopOnQuit: disconnectOnQuit,
             notifyOnUnexpectedDisconnect: notifyOnUnexpectedDisconnect,
             notifyOnTransientDrops: notifyOnTransientDrops,
             keepBrowserSession: keepBrowserSession

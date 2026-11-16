@@ -408,6 +408,23 @@ final class OpenConnectController: ObservableObject {
         return ConnectAttemptResult(outcome: .up, dsidUsed: dsidValue)
     }
 
+    // MARK: - Quitting
+
+    /// What Quit does besides ending the app: no connect on demand while the
+    /// app isn't there to sign in, and, with `stopTunnel`, the VPN stopped
+    /// (which makes the system end the network extension's session).
+    func prepareToQuit(stopTunnel: Bool) async {
+        if DemoMode.isEnabled { return }
+        await TunnelClient.shared.suspendAllOnDemand()
+        guard stopTunnel else { return }
+        if isConnected() {
+            await disconnect()
+        } else {
+            // A tunnel that is still starting, or waiting for a sign-in.
+            TunnelClient.shared.stop()
+        }
+    }
+
     // MARK: - Disconnect / reconnect
 
     func disconnect() async {

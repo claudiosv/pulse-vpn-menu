@@ -1,4 +1,5 @@
 import AppKit
+import ChromeCDP
 import Combine
 import SwiftUI
 
@@ -164,21 +165,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return menu
     }
 
-    /// Quitting never touched an active tunnel before (see
-    /// `AppSettings.disconnectOnQuit`'s doc comment) — that default is
-    /// preserved here. Only when the user has opted in and a tunnel is
-    /// actually up do we run the same `disconnect()` teardown a manual
-    /// Disconnect click would, and only call `terminate(nil)` once that has
-    /// actually finished (rather than firing it off and quitting
-    /// immediately, which would race the route cleanup).
+    /// Stops what the app started before it exits: a login Chrome window,
+    /// connect on demand (nothing would be here to sign a tunnel in), and,
+    /// unless the user turned that off (`AppSettings.disconnectOnQuit`), the
+    /// VPN itself — the same `disconnect()` teardown a Disconnect click
+    /// runs. `terminate(nil)` is only called once that has finished, rather
+    /// than racing the route cleanup.
     private func quit() {
-        guard appState.appSettings.disconnectOnQuit, appState.isConnected else {
-            NSApplication.shared.terminate(nil)
-            return
-        }
+        let stopTunnel = appState.appSettings.disconnectOnQuit
+        ChromeProcessLauncher.terminateAll()
         Task {
-            appState.logStore.append("Disconnecting before quitting…\n")
-            await appState.controller.disconnect()
+            if stopTunnel, appState.isConnected {
+                appState.logStore.append("Disconnecting before quitting…\n")
+            }
+            await appState.controller.prepareToQuit(stopTunnel: stopTunnel)
             NSApplication.shared.terminate(nil)
         }
     }

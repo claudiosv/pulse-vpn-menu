@@ -4,6 +4,25 @@ import Foundation
 /// HTTP endpoint to come up, mirroring `nodriver.Browser.start()`
 /// (`nodriver/core/browser.py`).
 public enum ChromeProcessLauncher {
+    /// The Chrome processes this launcher started and that are still running,
+    /// so an app that quits mid-login can end them instead of leaving them
+    /// behind (a child process does not stop with its parent).
+    private final class Running: @unchecked Sendable {
+        private let lock = NSLock()
+        private var processes: [ObjectIdentifier: Process] = [:]
+
+        func add(_ process: Process) { lock.withLock { processes[ObjectIdentifier(process)] = process } }
+        func remove(_ process: Process) { lock.withLock { processes[ObjectIdentifier(process)] = nil } }
+        func all() -> [Process] { lock.withLock { Array(processes.values) } }
+    }
+
+    private static let running = Running()
+
+    /// Terminates every Chrome this launcher started that is still running.
+    public static func terminateAll() {
+        for process in running.all() where process.isRunning { process.terminate() }
+    }
+
     public struct LaunchResult {
         public let process: Process
         public let webSocketDebuggerURL: URL
@@ -20,6 +39,7 @@ public enum ChromeProcessLauncher {
                 }
             }
             if process.isRunning { process.terminate() }
+            ChromeProcessLauncher.running.remove(process)
             await client.close()
         }
     }
@@ -95,6 +115,7 @@ public enum ChromeProcessLauncher {
         process.standardError = FileHandle.nullDevice
 
         try process.run()
+        running.add(process)
 
         do {
             let wsURL = try await pollForWebSocketURL(process: process, port: port)

@@ -31,11 +31,11 @@ struct GeneralView: View {
                 GlassCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle(isOn: $appSettings.disconnectOnQuit) {
-                            Text("Disconnect VPN when quitting the app")
+                            Text("Stop the VPN and its helpers when quitting the app")
                                 .font(.system(size: 13.5))
                         }
                         .toggleStyle(.switch)
-                        Text("Off by default: quitting the menu bar app leaves an active tunnel running.")
+                        Text("Quit disconnects the VPN (which ends the network extension's session), closes a login browser window if one is open, and turns connect on demand off until the app runs again. Turn this off to leave an active tunnel running after Quit.")
                             .cardFootnote()
                     }
                 }
